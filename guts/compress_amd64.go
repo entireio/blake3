@@ -4,6 +4,17 @@ import "unsafe"
 
 //go:generate go run -C ../avo . -out ../guts/compress_amd64.s
 
+// The single-block kernels load Node fields by fixed byte offset. Fail the
+// build if a future Node edit changes that layout without updating avo/gen.go.
+var (
+	_ [0]byte   = [unsafe.Offsetof(Node{}.CV)]byte{}
+	_ [32]byte  = [unsafe.Offsetof(Node{}.Block)]byte{}
+	_ [96]byte  = [unsafe.Offsetof(Node{}.Counter)]byte{}
+	_ [104]byte = [unsafe.Offsetof(Node{}.BlockLen)]byte{}
+	_ [108]byte = [unsafe.Offsetof(Node{}.Flags)]byte{}
+	_ [112]byte = [unsafe.Sizeof(Node{})]byte{}
+)
+
 // The wide kernels hash one input per SIMD lane. n is the number of inputs
 // actually present, which are contiguous at buf (or cvs); lanes beyond n
 // re-read the last input, so nothing past it is touched. Every lane's result
@@ -33,15 +44,61 @@ func compressBlocksAVX512(out *[1024]byte, block *[16]uint32, cv *[8]uint32, cou
 //go:noescape
 func compressBlocksAVX2(out *[512]byte, block *[16]uint32, cv *[8]uint32, counter uint64, blockLen uint32, flags uint32)
 
+// compressNode* compress a single node. chainBlocks* compress the given
+// number of 64-byte blocks from the start of a chunk into cv, setting
+// FlagChunkStart on the first; blocks must be at least 1.
+
+//go:noescape
+func compressNodeAVX512(out *[16]uint32, n *Node)
+
+//go:noescape
+func compressNodeAVX2(out *[16]uint32, n *Node)
+
+//go:noescape
+func chainBlocksAVX512(cv *[8]uint32, data *byte, blocks uint64, counter uint64, flags uint32)
+
+//go:noescape
+func chainBlocksAVX2(cv *[8]uint32, data *byte, blocks uint64, counter uint64, flags uint32)
+
 // CompressNode compresses a node into a 16-word output.
-func CompressNode(n Node) [16]uint32 {
-	return compressNodeGeneric(n)
+func CompressNode(n Node) (out [16]uint32) {
+	switch {
+	case haveAVX512:
+		compressNodeAVX512(&out, &n)
+	case haveAVX2:
+		compressNodeAVX2(&out, &n)
+	default:
+		return compressNodeGeneric(n)
+	}
+	return out
 }
 
 // CompressChunk compresses a single chunk, returning its final (uncompressed)
 // node.
 func CompressChunk(chunk []byte, key *[8]uint32, counter uint64, flags uint32) Node {
-	return compressChunkGeneric(chunk, key, counter, flags)
+	if !haveAVX2 {
+		return compressChunkGeneric(chunk, key, counter, flags)
+	}
+	n := Node{
+		CV:       *key,
+		Counter:  counter,
+		BlockLen: BlockSize,
+		Flags:    flags | FlagChunkStart,
+	}
+	if len(chunk) > BlockSize {
+		// Every block but the last is chained in assembly.
+		blocks := (len(chunk) - 1) / BlockSize
+		if haveAVX512 {
+			chainBlocksAVX512(&n.CV, &chunk[0], uint64(blocks), counter, flags)
+		} else {
+			chainBlocksAVX2(&n.CV, &chunk[0], uint64(blocks), counter, flags)
+		}
+		chunk = chunk[blocks*BlockSize:]
+		n.Flags &^= FlagChunkStart
+	}
+	n.BlockLen = uint32(copy((*[BlockSize]byte)(unsafe.Pointer(&n.Block))[:], chunk))
+	n.Flags |= FlagChunkEnd
+	return n
 }
 
 // A wide kernel costs the same however many of its lanes carry real input,

@@ -8884,3 +8884,1577 @@ TEXT ·compressBlocksAVX2(SB), NOSPLIT, $544-40
 	VMOVDQU      Y7, 480(AX)
 	VZEROUPPER
 	RET
+
+// func compressNodeAVX512(out *[16]uint32, n *[112]byte)
+// Requires: AVX, AVX2, AVX512F, AVX512VL
+TEXT ·compressNodeAVX512(SB), NOSPLIT, $0-16
+	MOVQ    out+0(FP), AX
+	MOVQ    n+8(FP), CX
+	VMOVDQU (CX), X0
+	VMOVDQU 16(CX), X1
+	VMOVDQU iv<>+0(SB), X2
+	VMOVDQU 96(CX), X3
+	VMOVDQU 32(CX), X4
+	VMOVDQU 48(CX), X5
+	VMOVDQU 64(CX), X6
+	VMOVDQU 80(CX), X7
+	VSHUFPS $0xdd, X5, X4, X8
+	VSHUFPS $0x88, X5, X4, X4
+	VMOVDQA X8, X5
+	VSHUFPS $0xdd, X7, X6, X8
+	VSHUFPS $0x88, X7, X6, X6
+	VPSHUFD $0x93, X6, X6
+	VPSHUFD $0x93, X8, X7
+
+	// Round 1
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 2
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 3
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 4
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 5
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 6
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 7
+	VPADDD  X4, X0, X0
+	VPADDD  X1, X0, X0
+	VPXORD  X0, X3, X3
+	VPRORD  $0x10, X3, X3
+	VPADDD  X3, X2, X2
+	VPXORD  X2, X1, X1
+	VPRORD  $0x0c, X1, X1
+	VPADDD  X5, X0, X0
+	VPADDD  X1, X0, X0
+	VPXORD  X0, X3, X3
+	VPRORD  $0x08, X3, X3
+	VPADDD  X3, X2, X2
+	VPXORD  X2, X1, X1
+	VPRORD  $0x07, X1, X1
+	VPSHUFD $0x93, X0, X0
+	VPSHUFD $0x4e, X3, X3
+	VPSHUFD $0x39, X2, X2
+	VPADDD  X6, X0, X0
+	VPADDD  X1, X0, X0
+	VPXORD  X0, X3, X3
+	VPRORD  $0x10, X3, X3
+	VPADDD  X3, X2, X2
+	VPXORD  X2, X1, X1
+	VPRORD  $0x0c, X1, X1
+	VPADDD  X7, X0, X0
+	VPADDD  X1, X0, X0
+	VPXORD  X0, X3, X3
+	VPRORD  $0x08, X3, X3
+	VPADDD  X3, X2, X2
+	VPXORD  X2, X1, X1
+	VPRORD  $0x07, X1, X1
+	VPSHUFD $0x39, X0, X0
+	VPSHUFD $0x4e, X3, X3
+	VPSHUFD $0x93, X2, X2
+	VPXORD  X2, X0, X0
+	VPXORD  X3, X1, X1
+	VPXOR   (CX), X2, X2
+	VPXOR   16(CX), X3, X3
+	VMOVDQU X0, (AX)
+	VMOVDQU X1, 16(AX)
+	VMOVDQU X2, 32(AX)
+	VMOVDQU X3, 48(AX)
+	RET
+
+// func chainBlocksAVX512(cv *[8]uint32, data *byte, blocks uint64, counter uint64, flags uint32)
+// Requires: AVX, AVX2, AVX512F, AVX512VL
+TEXT ·chainBlocksAVX512(SB), NOSPLIT, $16-36
+	MOVQ cv+0(FP), AX
+	MOVQ data+8(FP), CX
+	MOVQ blocks+16(FP), DX
+	MOVQ counter+24(FP), BX
+	MOVL flags+32(FP), SI
+
+	// Row d of the initial state: counter, block length, flags
+	MOVQ    BX, (SP)
+	MOVL    $0x00000040, 8(SP)
+	MOVL    SI, 12(SP)
+	ORL     $0x01, 12(SP)
+	VMOVDQU (AX), X0
+	VMOVDQU 16(AX), X1
+
+block:
+	VMOVDQU iv<>+0(SB), X2
+	VMOVDQU (SP), X3
+	VMOVDQU (CX), X4
+	VMOVDQU 16(CX), X5
+	VMOVDQU 32(CX), X6
+	VMOVDQU 48(CX), X7
+	VSHUFPS $0xdd, X5, X4, X8
+	VSHUFPS $0x88, X5, X4, X4
+	VMOVDQA X8, X5
+	VSHUFPS $0xdd, X7, X6, X8
+	VSHUFPS $0x88, X7, X6, X6
+	VPSHUFD $0x93, X6, X6
+	VPSHUFD $0x93, X8, X7
+	ADDQ    $0x40, CX
+	MOVL    SI, 12(SP)
+
+	// Round 1
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 2
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 3
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 4
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 5
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 6
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x10, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x0c, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXORD      X0, X3, X3
+	VPRORD      $0x08, X3, X3
+	VPADDD      X3, X2, X2
+	VPXORD      X2, X1, X1
+	VPRORD      $0x07, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 7
+	VPADDD  X4, X0, X0
+	VPADDD  X1, X0, X0
+	VPXORD  X0, X3, X3
+	VPRORD  $0x10, X3, X3
+	VPADDD  X3, X2, X2
+	VPXORD  X2, X1, X1
+	VPRORD  $0x0c, X1, X1
+	VPADDD  X5, X0, X0
+	VPADDD  X1, X0, X0
+	VPXORD  X0, X3, X3
+	VPRORD  $0x08, X3, X3
+	VPADDD  X3, X2, X2
+	VPXORD  X2, X1, X1
+	VPRORD  $0x07, X1, X1
+	VPSHUFD $0x93, X0, X0
+	VPSHUFD $0x4e, X3, X3
+	VPSHUFD $0x39, X2, X2
+	VPADDD  X6, X0, X0
+	VPADDD  X1, X0, X0
+	VPXORD  X0, X3, X3
+	VPRORD  $0x10, X3, X3
+	VPADDD  X3, X2, X2
+	VPXORD  X2, X1, X1
+	VPRORD  $0x0c, X1, X1
+	VPADDD  X7, X0, X0
+	VPADDD  X1, X0, X0
+	VPXORD  X0, X3, X3
+	VPRORD  $0x08, X3, X3
+	VPADDD  X3, X2, X2
+	VPXORD  X2, X1, X1
+	VPRORD  $0x07, X1, X1
+	VPSHUFD $0x39, X0, X0
+	VPSHUFD $0x4e, X3, X3
+	VPSHUFD $0x93, X2, X2
+	VPXORD  X2, X0, X0
+	VPXORD  X3, X1, X1
+	DECQ    DX
+	JNZ     block
+	VMOVDQU X0, (AX)
+	VMOVDQU X1, 16(AX)
+	RET
+
+// func compressNodeAVX2(out *[16]uint32, n *[112]byte)
+// Requires: AVX, AVX2
+TEXT ·compressNodeAVX2(SB), NOSPLIT, $0-16
+	MOVQ    out+0(FP), AX
+	MOVQ    n+8(FP), CX
+	VMOVDQU (CX), X0
+	VMOVDQU 16(CX), X1
+	VMOVDQU iv<>+0(SB), X2
+	VMOVDQU 96(CX), X3
+	VMOVDQU 32(CX), X4
+	VMOVDQU 48(CX), X5
+	VMOVDQU 64(CX), X6
+	VMOVDQU 80(CX), X7
+	VSHUFPS $0xdd, X5, X4, X8
+	VSHUFPS $0x88, X5, X4, X4
+	VMOVDQA X8, X5
+	VSHUFPS $0xdd, X7, X6, X8
+	VSHUFPS $0x88, X7, X6, X6
+	VPSHUFD $0x93, X6, X6
+	VPSHUFD $0x93, X8, X7
+
+	// Round 1
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 2
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 3
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 4
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 5
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 6
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 7
+	VPADDD  X4, X0, X0
+	VPADDD  X1, X0, X0
+	VPXOR   X0, X3, X3
+	VPSHUFB shuffle_rot16<>+0(SB), X3, X3
+	VPADDD  X3, X2, X2
+	VPXOR   X2, X1, X1
+	VPSRLD  $0x0c, X1, X8
+	VPSLLD  $0x14, X1, X1
+	VPOR    X8, X1, X1
+	VPADDD  X5, X0, X0
+	VPADDD  X1, X0, X0
+	VPXOR   X0, X3, X3
+	VPSHUFB shuffle_rot8<>+0(SB), X3, X3
+	VPADDD  X3, X2, X2
+	VPXOR   X2, X1, X1
+	VPSRLD  $0x07, X1, X8
+	VPSLLD  $0x19, X1, X1
+	VPOR    X8, X1, X1
+	VPSHUFD $0x93, X0, X0
+	VPSHUFD $0x4e, X3, X3
+	VPSHUFD $0x39, X2, X2
+	VPADDD  X6, X0, X0
+	VPADDD  X1, X0, X0
+	VPXOR   X0, X3, X3
+	VPSHUFB shuffle_rot16<>+0(SB), X3, X3
+	VPADDD  X3, X2, X2
+	VPXOR   X2, X1, X1
+	VPSRLD  $0x0c, X1, X8
+	VPSLLD  $0x14, X1, X1
+	VPOR    X8, X1, X1
+	VPADDD  X7, X0, X0
+	VPADDD  X1, X0, X0
+	VPXOR   X0, X3, X3
+	VPSHUFB shuffle_rot8<>+0(SB), X3, X3
+	VPADDD  X3, X2, X2
+	VPXOR   X2, X1, X1
+	VPSRLD  $0x07, X1, X8
+	VPSLLD  $0x19, X1, X1
+	VPOR    X8, X1, X1
+	VPSHUFD $0x39, X0, X0
+	VPSHUFD $0x4e, X3, X3
+	VPSHUFD $0x93, X2, X2
+	VPXOR   X2, X0, X0
+	VPXOR   X3, X1, X1
+	VPXOR   (CX), X2, X2
+	VPXOR   16(CX), X3, X3
+	VMOVDQU X0, (AX)
+	VMOVDQU X1, 16(AX)
+	VMOVDQU X2, 32(AX)
+	VMOVDQU X3, 48(AX)
+	RET
+
+// func chainBlocksAVX2(cv *[8]uint32, data *byte, blocks uint64, counter uint64, flags uint32)
+// Requires: AVX, AVX2
+TEXT ·chainBlocksAVX2(SB), NOSPLIT, $16-36
+	MOVQ cv+0(FP), AX
+	MOVQ data+8(FP), CX
+	MOVQ blocks+16(FP), DX
+	MOVQ counter+24(FP), BX
+	MOVL flags+32(FP), SI
+
+	// Row d of the initial state: counter, block length, flags
+	MOVQ    BX, (SP)
+	MOVL    $0x00000040, 8(SP)
+	MOVL    SI, 12(SP)
+	ORL     $0x01, 12(SP)
+	VMOVDQU (AX), X0
+	VMOVDQU 16(AX), X1
+
+block:
+	VMOVDQU iv<>+0(SB), X2
+	VMOVDQU (SP), X3
+	VMOVDQU (CX), X4
+	VMOVDQU 16(CX), X5
+	VMOVDQU 32(CX), X6
+	VMOVDQU 48(CX), X7
+	VSHUFPS $0xdd, X5, X4, X8
+	VSHUFPS $0x88, X5, X4, X4
+	VMOVDQA X8, X5
+	VSHUFPS $0xdd, X7, X6, X8
+	VSHUFPS $0x88, X7, X6, X6
+	VPSHUFD $0x93, X6, X6
+	VPSHUFD $0x93, X8, X7
+	ADDQ    $0x40, CX
+	MOVL    SI, 12(SP)
+
+	// Round 1
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 2
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 3
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 4
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 5
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 6
+	VPADDD      X4, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X5, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x93, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x39, X2, X2
+	VPADDD      X6, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot16<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x0c, X1, X8
+	VPSLLD      $0x14, X1, X1
+	VPOR        X8, X1, X1
+	VPADDD      X7, X0, X0
+	VPADDD      X1, X0, X0
+	VPXOR       X0, X3, X3
+	VPSHUFB     shuffle_rot8<>+0(SB), X3, X3
+	VPADDD      X3, X2, X2
+	VPXOR       X2, X1, X1
+	VPSRLD      $0x07, X1, X8
+	VPSLLD      $0x19, X1, X1
+	VPOR        X8, X1, X1
+	VPSHUFD     $0x39, X0, X0
+	VPSHUFD     $0x4e, X3, X3
+	VPSHUFD     $0x93, X2, X2
+	VSHUFPS     $0xd6, X5, X4, X8
+	VPSHUFD     $0x0f, X4, X9
+	VPSHUFD     $0x39, X8, X4
+	VSHUFPS     $0xfa, X7, X6, X8
+	VPBLENDD    $0xaa, X8, X9, X9
+	VPUNPCKLQDQ X5, X7, X8
+	VPBLENDD    $0x88, X6, X8, X8
+	VPSHUFD     $0x78, X8, X8
+	VPUNPCKHDQ  X7, X5, X5
+	VPUNPCKLDQ  X5, X6, X6
+	VPSHUFD     $0x1e, X6, X7
+	VMOVDQA     X9, X5
+	VMOVDQA     X8, X6
+
+	// Round 7
+	VPADDD  X4, X0, X0
+	VPADDD  X1, X0, X0
+	VPXOR   X0, X3, X3
+	VPSHUFB shuffle_rot16<>+0(SB), X3, X3
+	VPADDD  X3, X2, X2
+	VPXOR   X2, X1, X1
+	VPSRLD  $0x0c, X1, X8
+	VPSLLD  $0x14, X1, X1
+	VPOR    X8, X1, X1
+	VPADDD  X5, X0, X0
+	VPADDD  X1, X0, X0
+	VPXOR   X0, X3, X3
+	VPSHUFB shuffle_rot8<>+0(SB), X3, X3
+	VPADDD  X3, X2, X2
+	VPXOR   X2, X1, X1
+	VPSRLD  $0x07, X1, X8
+	VPSLLD  $0x19, X1, X1
+	VPOR    X8, X1, X1
+	VPSHUFD $0x93, X0, X0
+	VPSHUFD $0x4e, X3, X3
+	VPSHUFD $0x39, X2, X2
+	VPADDD  X6, X0, X0
+	VPADDD  X1, X0, X0
+	VPXOR   X0, X3, X3
+	VPSHUFB shuffle_rot16<>+0(SB), X3, X3
+	VPADDD  X3, X2, X2
+	VPXOR   X2, X1, X1
+	VPSRLD  $0x0c, X1, X8
+	VPSLLD  $0x14, X1, X1
+	VPOR    X8, X1, X1
+	VPADDD  X7, X0, X0
+	VPADDD  X1, X0, X0
+	VPXOR   X0, X3, X3
+	VPSHUFB shuffle_rot8<>+0(SB), X3, X3
+	VPADDD  X3, X2, X2
+	VPXOR   X2, X1, X1
+	VPSRLD  $0x07, X1, X8
+	VPSLLD  $0x19, X1, X1
+	VPOR    X8, X1, X1
+	VPSHUFD $0x39, X0, X0
+	VPSHUFD $0x4e, X3, X3
+	VPSHUFD $0x93, X2, X2
+	VPXOR   X2, X0, X0
+	VPXOR   X3, X1, X1
+	DECQ    DX
+	JNZ     block
+	VMOVDQU X0, (AX)
+	VMOVDQU X1, 16(AX)
+	RET

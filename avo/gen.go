@@ -1,13 +1,14 @@
 // Command avo generates guts/compress_amd64.s.
 //
-// It emits two families of kernels:
+// It emits three families of kernels:
 //
 //   - AVX-512 kernels that hash sixteen (ZMM) or eight (YMM) inputs at once,
 //     keeping the whole state and message schedule in registers;
 //   - AVX2 kernels that hash eight inputs at once, with the message schedule
-//     on the stack.
+//     on the stack;
+//   - single-input kernels (XMM) for the blocks no wide kernel can batch.
 //
-// These kernels read their inputs through a table of per-lane offsets, so
+// The wide kernels read their inputs through a table of per-lane offsets, so
 // a caller with fewer inputs than lanes can still use them: the spare lanes
 // are pointed at the last valid input and their results are discarded.
 package main
@@ -32,6 +33,11 @@ func main() {
 	genCompressChunksAVX2()
 	genCompressParentsAVX2()
 	genCompressBlocksAVX2()
+
+	for _, avx512 := range []bool{true, false} {
+		genCompressNode(avx512)
+		genChainBlocks(avx512)
+	}
 
 	Generate()
 }
@@ -859,4 +865,203 @@ func transpose(src, dst []VecVirtual) {
 		VPERM2I128(Imm(0x20), src[i+4], src[i], dst[i+0])
 		VPERM2I128(Imm(0x31), src[i+4], src[i], dst[i+4])
 	}
+}
+
+// -----------------------------------------------------------------------------
+// Single-input kernels
+// -----------------------------------------------------------------------------
+
+// single compresses one block at a time with the state held as four rows of
+// four words: a = v0..v3, b = v4..v7, c = v8..v11, d = v12..v15. A G function
+// then acts on all four columns at once, and the rows are rotated so that the
+// diagonals line up as columns for the second half of each round.
+type single struct {
+	avx512     bool
+	a, b, c, d VecVirtual
+	m          [4]VecVirtual // message vectors, in the order the round uses them
+	t          [2]VecVirtual // scratch
+}
+
+func newSingle(avx512 bool) *single {
+	s := &single{avx512: avx512}
+	s.a, s.b, s.c, s.d = XMM(), XMM(), XMM(), XMM()
+	for i := range s.m {
+		s.m[i] = XMM()
+	}
+	for i := range s.t {
+		s.t[i] = XMM()
+	}
+	return s
+}
+
+func (s *single) suffix() string {
+	if s.avx512 {
+		return "AVX512"
+	}
+	return "AVX2"
+}
+
+func (s *single) xor(x, y, dst VecVirtual) {
+	if s.avx512 {
+		VPXORD(x, y, dst)
+	} else {
+		VPXOR(x, y, dst)
+	}
+}
+
+// xorRotate sets v = (v ^ x) >>> n.
+func (s *single) xorRotate(x, v VecVirtual, n uint64) {
+	s.xor(x, v, v)
+	switch {
+	case s.avx512:
+		VPRORD(Imm(n), v, v)
+	case n == 16:
+		VPSHUFB(globals.shuffleRot16, v, v)
+	case n == 8:
+		VPSHUFB(globals.shuffleRot8, v, v)
+	default:
+		VPSRLD(Imm(n), v, s.t[0])
+		VPSLLD(Imm(32-n), v, v)
+		VPOR(s.t[0], v, v)
+	}
+}
+
+// g applies the G function to every column, mixing in mx and then my.
+func (s *single) g(mx, my VecVirtual) {
+	VPADDD(mx, s.a, s.a)
+	VPADDD(s.b, s.a, s.a)
+	s.xorRotate(s.a, s.d, 16)
+	VPADDD(s.d, s.c, s.c)
+	s.xorRotate(s.c, s.b, 12)
+	VPADDD(my, s.a, s.a)
+	VPADDD(s.b, s.a, s.a)
+	s.xorRotate(s.a, s.d, 8)
+	VPADDD(s.d, s.c, s.c)
+	s.xorRotate(s.c, s.b, 7)
+}
+
+// loadMessage loads the sixteen message words at p and arranges them as the
+// first round expects: m[0] and m[1] hold the even and odd words of the
+// column step, m[2] and m[3] those of the diagonal step.
+//
+// Row b is the last to be ready after each step, so the diagonal step leaves
+// it in place and rotates the other three rows around it. Its lanes therefore
+// run G7, G4, G5, G6, and the message vectors are rotated to match.
+func (s *single) loadMessage(p Mem) {
+	VMOVDQU(p.Offset(0), s.m[0])
+	VMOVDQU(p.Offset(16), s.m[1])
+	VMOVDQU(p.Offset(32), s.m[2])
+	VMOVDQU(p.Offset(48), s.m[3])
+	VSHUFPS(Imm(0xDD), s.m[1], s.m[0], s.t[0]) // m1 m3 m5 m7
+	VSHUFPS(Imm(0x88), s.m[1], s.m[0], s.m[0]) // m0 m2 m4 m6
+	VMOVDQA(s.t[0], s.m[1])
+	VSHUFPS(Imm(0xDD), s.m[3], s.m[2], s.t[0]) // m9 m11 m13 m15
+	VSHUFPS(Imm(0x88), s.m[3], s.m[2], s.m[2]) // m8 m10 m12 m14
+	VPSHUFD(Imm(0x93), s.m[2], s.m[2])         // m14 m8 m10 m12
+	VPSHUFD(Imm(0x93), s.t[0], s.m[3])         // m15 m9 m11 m13
+}
+
+// permuteMessage rearranges the message vectors for the next round. Because
+// every round permutes the words the same way, so does this.
+func (s *single) permuteMessage() {
+	m, t := s.m, s.t
+	VSHUFPS(Imm(0xD6), m[1], m[0], t[0])
+	VPSHUFD(Imm(0x0F), m[0], t[1])
+	VPSHUFD(Imm(0x39), t[0], m[0])
+	VSHUFPS(Imm(0xFA), m[3], m[2], t[0])
+	VPBLENDD(Imm(0xAA), t[0], t[1], t[1])
+	VPUNPCKLQDQ(m[1], m[3], t[0])
+	VPBLENDD(Imm(0x88), m[2], t[0], t[0])
+	VPSHUFD(Imm(0x78), t[0], t[0])
+	VPUNPCKHDQ(m[3], m[1], m[1])
+	VPUNPCKLDQ(m[1], m[2], m[2])
+	VPSHUFD(Imm(0x1E), m[2], m[3])
+	VMOVDQA(t[1], m[1])
+	VMOVDQA(t[0], m[2])
+}
+
+// rounds performs the seven rounds of the compression function.
+func (s *single) rounds() {
+	for i := 0; i < 7; i++ {
+		Comment(fmt.Sprintf("Round %v", i+1))
+		s.g(s.m[0], s.m[1])
+		VPSHUFD(Imm(0x93), s.a, s.a)
+		VPSHUFD(Imm(0x4E), s.d, s.d)
+		VPSHUFD(Imm(0x39), s.c, s.c)
+		s.g(s.m[2], s.m[3])
+		VPSHUFD(Imm(0x39), s.a, s.a)
+		VPSHUFD(Imm(0x4E), s.d, s.d)
+		VPSHUFD(Imm(0x93), s.c, s.c)
+		if i < 6 {
+			s.permuteMessage()
+		}
+	}
+}
+
+// genCompressNode generates the single-block compression function. The last
+// four words of a Node are exactly row d of the initial state.
+func genCompressNode(avx512 bool) {
+	s := newSingle(avx512)
+	TEXT("compressNode"+s.suffix(), NOSPLIT, "func(out *[16]uint32, n *[112]byte)") // n is a *Node
+	out := Mem{Base: Load(Param("out"), GP64())}
+	n := Mem{Base: Load(Param("n"), GP64())}
+
+	VMOVDQU(n.Offset(0), s.a)
+	VMOVDQU(n.Offset(16), s.b)
+	VMOVDQU(globals.iv, s.c)
+	VMOVDQU(n.Offset(96), s.d)
+	s.loadMessage(n.Offset(32))
+
+	s.rounds()
+
+	s.xor(s.c, s.a, s.a)
+	s.xor(s.d, s.b, s.b)
+	VPXOR(n.Offset(0), s.c, s.c)
+	VPXOR(n.Offset(16), s.d, s.d)
+	VMOVDQU(s.a, out.Offset(0))
+	VMOVDQU(s.b, out.Offset(16))
+	VMOVDQU(s.c, out.Offset(32))
+	VMOVDQU(s.d, out.Offset(48))
+	RET()
+}
+
+// genChainBlocks generates the function that compresses the leading blocks of
+// a chunk, updating the chaining value in place. Only the first block carries
+// the chunk-start flag; the caller compresses the chunk's last block itself.
+func genChainBlocks(avx512 bool) {
+	s := newSingle(avx512)
+	TEXT("chainBlocks"+s.suffix(), NOSPLIT, "func(cv *[8]uint32, data *byte, blocks uint64, counter uint64, flags uint32)")
+	cv := Mem{Base: Load(Param("cv"), GP64())}
+	data := Load(Param("data"), GP64())
+	blocks := Load(Param("blocks"), GP64())
+	counter := Load(Param("counter"), GP64())
+	flags := Load(Param("flags"), GP32())
+
+	Comment("Row d of the initial state: counter, block length, flags")
+	row := AllocLocal(16)
+	MOVQ(counter, row.Offset(0))
+	MOVL(U32(64), row.Offset(8))
+	MOVL(flags, row.Offset(12))
+	ORL(Imm(1), row.Offset(12)) // chunk start
+
+	VMOVDQU(cv.Offset(0), s.a)
+	VMOVDQU(cv.Offset(16), s.b)
+
+	Label("block")
+	VMOVDQU(globals.iv, s.c)
+	VMOVDQU(row, s.d)
+	s.loadMessage(Mem{Base: data})
+	ADDQ(Imm(64), data)
+	MOVL(flags, row.Offset(12)) // later blocks do not start the chunk
+
+	s.rounds()
+
+	s.xor(s.c, s.a, s.a)
+	s.xor(s.d, s.b, s.b)
+	DECQ(blocks)
+	JNZ(LabelRef("block"))
+
+	VMOVDQU(s.a, cv.Offset(0))
+	VMOVDQU(s.b, cv.Offset(16))
+	RET()
 }
