@@ -23,11 +23,7 @@ jobs:
           go-version: ${{ matrix.go }}
           cache: true
       - run: go test ./...
-      # Luke Champine's inherited Avo-generated AMD64 assembly uses valid
-      # sub-word operands that asmdecl cannot model. The native SIMD job below
-      # differentially tests those entry points against the generic routines.
-      - name: Vet (except generated-assembly declarations)
-        run: go vet -asmdecl=false ./...
+      - run: go vet ./...
 
   amd64-simd:
     runs-on: ubuntu-24.04
@@ -49,6 +45,12 @@ jobs:
             printf 'GitHub runner did not expose AVX2\n' >&2
             exit 1
           fi
+      - name: Require generated assembly to be current
+        shell: bash
+        run: |
+          set -euo pipefail
+          go generate ./guts
+          git diff --exit-code -- guts
       - name: Capture interleaved fork and upstream benchmarks
         shell: bash
         run: |
@@ -72,6 +74,20 @@ jobs:
                 -benchtime=500ms -count=1 . >>"${RUNNER_TEMP}/fork-amd64.txt"
             fi
           done
+          printf '== fork ==\n'
+          cat "${RUNNER_TEMP}/fork-amd64.txt"
+          printf '== upstream ==\n'
+          cat "${RUNNER_TEMP}/upstream-amd64.txt"
+      - name: Capture per-backend kernel benchmarks
+        shell: bash
+        env:
+          GOMAXPROCS: 1
+        run: |
+          set -euo pipefail
+          # The package benchmarks run once per backend (generic, AVX2 and,
+          # where the runner has it, AVX-512), so one run compares them.
+          go test -run '^$' -bench . -benchtime=300ms -count=3 ./guts |
+            tee "${RUNNER_TEMP}/kernels-amd64.txt"
       - uses: actions/upload-artifact@v4
         with:
           name: amd64-simd-evidence
@@ -79,3 +95,4 @@ jobs:
             ${{ runner.temp }}/amd64-simd-tests.txt
             ${{ runner.temp }}/fork-amd64.txt
             ${{ runner.temp }}/upstream-amd64.txt
+            ${{ runner.temp }}/kernels-amd64.txt
