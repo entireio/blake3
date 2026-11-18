@@ -79,3 +79,115 @@ jobs:
             ${{ runner.temp }}/amd64-simd-tests.txt
             ${{ runner.temp }}/fork-amd64.txt
             ${{ runner.temp }}/upstream-amd64.txt
+
+  arm64-simd:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Record CPU features
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Linux" ]]; then
+            grep -m1 -E 'CPU part' /proc/cpuinfo || true
+            grep -m1 -E 'Features' /proc/cpuinfo || true
+          else
+            sysctl -n machdep.cpu.brand_string || true
+          fi
+          go env GOARCH
+      - name: Require native NEON differential coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="${RUNNER_TEMP}/arm64-simd-tests.txt"
+          go test -count=1 -v ./guts | tee "${output}"
+          if ! grep -q -E -- '--- PASS: Test.*/NEON' "${output}"; then
+            printf 'runner did not exercise the NEON kernels\n' >&2
+            exit 1
+          fi
+          if grep -q -E -- '--- PASS: Test.*/SVE2' "${output}"; then
+            printf 'SVE2 kernels were exercised\n'
+          else
+            printf 'SVE2 is not available on this runner; only NEON was exercised\n'
+          fi
+      - name: Capture interleaved head and base benchmarks
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          : >"${RUNNER_TEMP}/head-arm64.txt"
+          : >"${RUNNER_TEMP}/base-arm64.txt"
+          base_ref="${BASE_SHA:-${DEFAULT_BRANCH:-main}}"
+          base_dir="${RUNNER_TEMP}/base-blake3"
+          if ! git fetch --depth=1 origin "${base_ref}" ||
+            ! git worktree add --detach "${base_dir}" FETCH_HEAD; then
+            printf 'base revision %s is unavailable; benchmarking head only\n' "${base_ref}" >&2
+            base_dir=""
+          fi
+          bench() {
+            (cd "$1" && go test -run '^$' -bench '^BenchmarkSum256(Serial)?$' -benchmem \
+              -benchtime=500ms -count=1 .) >>"$2"
+          }
+          for sample in {1..7}; do
+            if ((sample % 2 == 1)); then
+              bench . "${RUNNER_TEMP}/head-arm64.txt"
+              if [[ -n "${base_dir}" ]]; then bench "${base_dir}" "${RUNNER_TEMP}/base-arm64.txt"; fi
+            else
+              if [[ -n "${base_dir}" ]]; then bench "${base_dir}" "${RUNNER_TEMP}/base-arm64.txt"; fi
+              bench . "${RUNNER_TEMP}/head-arm64.txt"
+            fi
+          done
+          printf '== head ==\n'
+          cat "${RUNNER_TEMP}/head-arm64.txt"
+          printf '== base ==\n'
+          cat "${RUNNER_TEMP}/base-arm64.txt"
+      - name: Capture single-core head and base benchmarks
+        shell: bash
+        env:
+          GOMAXPROCS: 1
+        run: |
+          set -euo pipefail
+          : >"${RUNNER_TEMP}/head-arm64-1core.txt"
+          : >"${RUNNER_TEMP}/base-arm64-1core.txt"
+          base_dir="${RUNNER_TEMP}/base-blake3"
+          bench() {
+            (cd "$1" && go test -run '^$' -bench '^BenchmarkSum256$' -benchmem \
+              -benchtime=500ms -count=1 .) >>"$2"
+          }
+          for sample in {1..5}; do
+            bench . "${RUNNER_TEMP}/head-arm64-1core.txt"
+            if [[ -d "${base_dir}" ]]; then bench "${base_dir}" "${RUNNER_TEMP}/base-arm64-1core.txt"; fi
+          done
+          printf '== head, one core ==\n'
+          cat "${RUNNER_TEMP}/head-arm64-1core.txt"
+          printf '== base, one core ==\n'
+          cat "${RUNNER_TEMP}/base-arm64-1core.txt"
+      - name: Capture per-backend kernel benchmarks
+        shell: bash
+        env:
+          GOMAXPROCS: 1
+        run: |
+          set -euo pipefail
+          # The package benchmarks run once per backend (generic, NEON and,
+          # where the runner has it, SVE2), so one run compares them.
+          go test -run '^$' -bench 'ChunkCVs|MergeCVs|CompressBlocks' \
+            -benchtime=300ms -count=3 ./guts | tee "${RUNNER_TEMP}/kernels-arm64.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-simd-evidence-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/arm64-simd-tests.txt
+            ${{ runner.temp }}/head-arm64.txt
+            ${{ runner.temp }}/base-arm64.txt
+            ${{ runner.temp }}/head-arm64-1core.txt
+            ${{ runner.temp }}/base-arm64-1core.txt
+            ${{ runner.temp }}/kernels-arm64.txt
