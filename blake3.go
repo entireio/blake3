@@ -55,7 +55,12 @@ func (h *Hasher) pushSubtree(cv [8]uint32, height int) {
 // rootNode computes the root of the Merkle tree. It does not modify the
 // stack.
 func (h *Hasher) rootNode() guts.Node {
-	n := guts.CompressChunk(h.buf[:h.buflen], &h.key, h.counter, h.flags)
+	return h.rootFrom(guts.CompressChunk(h.buf[:h.buflen], &h.key, h.counter, h.flags))
+}
+
+// rootFrom computes the root of the Merkle tree whose rightmost subtree is n
+// and whose other subtrees are on the stack. It does not modify the stack.
+func (h *Hasher) rootFrom(n guts.Node) guts.Node {
 	for i := bits.TrailingZeros64(h.counter); i < bits.Len64(h.counter); i++ {
 		if h.hasSubtreeAtHeight(i) {
 			n = guts.ParentNode(h.stack[i], guts.ChainingValue(n), &h.key, h.flags)
@@ -63,6 +68,51 @@ func (h *Hasher) rootNode() guts.Node {
 	}
 	n.Flags |= guts.FlagRoot
 	return n
+}
+
+// messageRoot returns the root node of a complete message.
+//
+// A streaming Hasher has to hold back the last chunk of every Write, because
+// it cannot know whether more input follows, and then compresses that chunk
+// on its own. With the whole message in hand the final chunks can share a
+// SIMD batch instead: the last 1..MaxSIMD chunks of a message always form a
+// subtree of their own, so they are hashed together and attached to whatever
+// precedes them.
+func messageRoot(b []byte, key *[8]uint32, flags uint32) guts.Node {
+	const group = guts.MaxSIMD * guts.ChunkSize
+	tailLen := len(b)
+	if tailLen > group {
+		tailLen = (len(b)-1)%group + 1
+	}
+	head, tail := b[:len(b)-tailLen], b[len(b)-tailLen:]
+	counter := uint64(len(head) / guts.ChunkSize)
+
+	var n guts.Node
+	if len(tail) <= guts.ChunkSize {
+		n = guts.CompressChunk(tail, key, counter, flags)
+	} else {
+		var cvs [guts.MaxSIMD][8]uint32
+		full := len(tail) / guts.ChunkSize
+		guts.ChunkCVs(cvs[:full], tail[:full*guts.ChunkSize], key, counter, flags)
+		count := full
+		if partial := tail[full*guts.ChunkSize:]; len(partial) > 0 {
+			cvs[count] = guts.ChainingValue(guts.CompressChunk(partial, key, counter+uint64(full), flags))
+			count++
+		}
+		n = guts.MergeCVs(cvs[:count], key, flags)
+	}
+	if len(head) == 0 {
+		n.Flags |= guts.FlagRoot
+		return n
+	}
+
+	h := Hasher{key: *key, flags: flags}
+	if len(head) < parallelWriteThreshold {
+		h.absorb(head)
+	} else {
+		h.absorbParallel(head)
+	}
+	return h.rootFrom(n)
 }
 
 // Write implements hash.Hash.
@@ -262,10 +312,6 @@ func NewSerial(size int, key []byte) *Hasher {
 	return h
 }
 
-// Sum256 and Sum512 always use the same hasher state, so we can save some time
-// when hashing small inputs by constructing the hasher ahead of time.
-var defaultHasher = New(64, nil)
-
 // Sum256 returns the unkeyed BLAKE3 hash of b, truncated to 256 bits.
 func Sum256(b []byte) (out [32]byte) {
 	out512 := Sum512(b)
@@ -284,13 +330,7 @@ func Sum256Keyed(key [KeySize]byte, b []byte) (out [32]byte) {
 	for i := range keyWords {
 		keyWords[i] = binary.LittleEndian.Uint32(key[i*4:])
 	}
-	h := Hasher{
-		key:   keyWords,
-		flags: guts.FlagKeyedHash,
-		size:  32,
-	}
-	_, _ = h.Write(b)
-	n := h.rootNode()
+	n := messageRoot(b, &keyWords, guts.FlagKeyedHash)
 	block := guts.WordsToBytes(guts.CompressNode(n))
 	copy(out[:], block[:])
 	return out
@@ -325,13 +365,8 @@ func Sum512(b []byte) (out [64]byte) {
 			BlockLen: uint32(len(b)),
 			Flags:    guts.FlagChunkStart | guts.FlagChunkEnd | guts.FlagRoot,
 		}))
-	} else if len(b) <= guts.ChunkSize {
-		n = guts.CompressChunk(b, &guts.IV, 0, 0)
-		n.Flags |= guts.FlagRoot
 	} else {
-		h := *defaultHasher
-		h.Write(b)
-		n = h.rootNode()
+		n = messageRoot(b, &guts.IV, 0)
 	}
 	return guts.WordsToBytes(guts.CompressNode(n))
 }
