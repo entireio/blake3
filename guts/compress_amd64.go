@@ -21,50 +21,54 @@ func compressBlocksAVX2(out *[512]byte, msgs *[16]uint32, cv *[8]uint32, counter
 //go:noescape
 func compressParentsAVX2(parents *[8][8]uint32, cvs *[16][8]uint32, key *[8]uint32, flags uint32)
 
-func compressBufferAVX512(buf *[MaxSIMD * ChunkSize]byte, buflen int, key *[8]uint32, counter uint64, flags uint32) Node {
-	var cvs [MaxSIMD][8]uint32
-	compressChunksAVX512(&cvs, buf, key, counter, flags)
-	numChunks := uint64(buflen / ChunkSize)
-	if buflen%ChunkSize != 0 {
-		// use non-asm for remainder
-		partialChunk := buf[buflen-buflen%ChunkSize : buflen]
-		cvs[numChunks] = ChainingValue(CompressChunk(partialChunk, key, counter+numChunks, flags))
-		numChunks++
-	}
-	return mergeSubtrees(&cvs, numChunks, key, flags)
+// CompressNode compresses a node into a 16-word output.
+func CompressNode(n Node) [16]uint32 {
+	return compressNodeGeneric(n)
 }
 
-func compressBufferAVX2(buf *[MaxSIMD * ChunkSize]byte, buflen int, key *[8]uint32, counter uint64, flags uint32) Node {
-	var cvs [MaxSIMD][8]uint32
-	cvHalves := (*[2][8][8]uint32)(unsafe.Pointer(&cvs))
-	bufHalves := (*[2][8 * ChunkSize]byte)(unsafe.Pointer(buf))
-	compressChunksAVX2(&cvHalves[0], &bufHalves[0], key, counter, flags)
-	numChunks := uint64(buflen / ChunkSize)
-	if numChunks > 8 {
-		compressChunksAVX2(&cvHalves[1], &bufHalves[1], key, counter+8, flags)
+// compressChunks stores the chaining values of len(cvs) full chunks in cvs.
+func compressChunks(cvs [][8]uint32, buf []byte, key *[8]uint32, counter uint64, flags uint32) {
+	if haveAVX512 {
+		for len(cvs) >= 16 {
+			compressChunksAVX512((*[16][8]uint32)(cvs), (*[16 * ChunkSize]byte)(buf), key, counter, flags)
+			cvs, buf, counter = cvs[16:], buf[16*ChunkSize:], counter+16
+		}
 	}
-	if buflen%ChunkSize != 0 {
-		// use non-asm for remainder
-		partialChunk := buf[buflen-buflen%ChunkSize : buflen]
-		cvs[numChunks] = ChainingValue(CompressChunk(partialChunk, key, counter+numChunks, flags))
-		numChunks++
+	if haveAVX2 {
+		for len(cvs) >= 8 {
+			compressChunksAVX2((*[8][8]uint32)(cvs), (*[8 * ChunkSize]byte)(buf), key, counter, flags)
+			cvs, buf, counter = cvs[8:], buf[8*ChunkSize:], counter+8
+		}
+		if len(cvs) >= 2 {
+			// The kernel reads eight whole chunks, so pad a partial group.
+			var padded [8 * ChunkSize]byte
+			var out [8][8]uint32
+			copy(padded[:], buf)
+			compressChunksAVX2(&out, &padded, key, counter, flags)
+			copy(cvs, out[:])
+			return
+		}
 	}
-	return mergeSubtrees(&cvs, numChunks, key, flags)
+	compressChunksGeneric(cvs, buf, key, counter, flags)
 }
 
-// CompressBuffer compresses up to MaxSIMD chunks in parallel and returns their
-// root node.
-func CompressBuffer(buf *[MaxSIMD * ChunkSize]byte, buflen int, key *[8]uint32, counter uint64, flags uint32) Node {
-	if buflen <= ChunkSize {
-		return CompressChunk(buf[:buflen], key, counter, flags)
+// compressParents stores the chaining value of the parent of cvs[2i] and
+// cvs[2i+1] in parents[i]. parents may alias the front of cvs.
+func compressParents(parents, cvs [][8]uint32, key *[8]uint32, flags uint32) {
+	if !haveAVX2 {
+		compressParentsGeneric(parents, cvs, key, flags)
+		return
 	}
-	switch {
-	case haveAVX512 && buflen >= ChunkSize*2:
-		return compressBufferAVX512(buf, buflen, key, counter, flags)
-	case haveAVX2 && buflen >= ChunkSize*2:
-		return compressBufferAVX2(buf, buflen, key, counter, flags)
-	default:
-		return compressBufferGeneric(buf, buflen, key, counter, flags)
+	for len(parents) >= 8 {
+		compressParentsAVX2((*[8][8]uint32)(parents), (*[16][8]uint32)(cvs), key, flags)
+		parents, cvs = parents[8:], cvs[16:]
+	}
+	if len(parents) > 0 {
+		var in [16][8]uint32
+		var out [8][8]uint32
+		copy(in[:], cvs)
+		compressParentsAVX2(&out, &in, key, flags)
+		copy(parents, out[:])
 	}
 }
 
@@ -103,27 +107,8 @@ func CompressBlocks(out *[MaxSIMD * BlockSize]byte, n Node) {
 		compressBlocksAVX2(&outs[0], &n.Block, &n.CV, n.Counter, n.BlockLen, n.Flags)
 		compressBlocksAVX2(&outs[1], &n.Block, &n.CV, n.Counter+8, n.BlockLen, n.Flags)
 	default:
-		outs := (*[MaxSIMD][64]byte)(unsafe.Pointer(out))
-		compressBlocksGeneric(outs, n)
+		compressBlocksGeneric(out, n)
 	}
-}
-
-func mergeSubtrees(cvs *[MaxSIMD][8]uint32, numCVs uint64, key *[8]uint32, flags uint32) Node {
-	if !haveAVX2 {
-		return mergeSubtreesGeneric(cvs, numCVs, key, flags)
-	}
-	for numCVs > 2 {
-		if numCVs%2 == 0 {
-			compressParentsAVX2((*[8][8]uint32)(unsafe.Pointer(cvs)), cvs, key, flags)
-		} else {
-			keep := cvs[numCVs-1]
-			compressParentsAVX2((*[8][8]uint32)(unsafe.Pointer(cvs)), cvs, key, flags)
-			cvs[numCVs/2] = keep
-			numCVs++
-		}
-		numCVs /= 2
-	}
-	return ParentNode(cvs[0], cvs[1], key, flags)
 }
 
 // BytesToWords converts an array of 64 bytes to an array of 16 bytes.

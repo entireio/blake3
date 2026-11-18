@@ -88,40 +88,10 @@ func (h *Hasher) Write(p []byte) (int, error) {
 			rem = len(h.buf) // don't prematurely compress
 		}
 		full := p[:len(p)-rem]
-		trees := guts.Eigentrees(h.counter, uint64(len(full)/guts.ChunkSize))
-		if h.serial || len(full) < parallelWriteThreshold || len(trees) == 1 {
-			offset, counter := 0, h.counter
-			for _, height := range trees {
-				size := (1 << height) * guts.ChunkSize
-				var node guts.Node
-				if h.serial {
-					node = guts.CompressEigentreeSerial(full[offset:offset+size], &h.key, counter, h.flags)
-				} else {
-					node = guts.CompressEigentree(full[offset:offset+size], &h.key, counter, h.flags)
-				}
-				cv := guts.ChainingValue(node)
-				h.pushSubtree(cv, height)
-				offset += size
-				counter += 1 << height
-			}
+		if h.serial || len(full) < parallelWriteThreshold {
+			h.absorb(full)
 		} else {
-			cvs := make([][8]uint32, len(trees))
-			offsets := make([]int, len(trees))
-			counters := make([]uint64, len(trees))
-			offset, counter := 0, h.counter
-			for i, height := range trees {
-				offsets[i] = offset
-				counters[i] = counter
-				offset += (1 << height) * guts.ChunkSize
-				counter += 1 << height
-			}
-			parallelFor(len(trees), func(i int) {
-				size := (1 << trees[i]) * guts.ChunkSize
-				cvs[i] = guts.ChainingValue(guts.CompressEigentree(full[offsets[i]:offsets[i]+size], &h.key, counters[i], h.flags))
-			})
-			for i, height := range trees {
-				h.pushSubtree(cvs[i], height)
-			}
+			h.absorbParallel(full)
 		}
 		p = p[len(p)-rem:]
 	}
@@ -131,6 +101,95 @@ func (h *Hasher) Write(p []byte) (int, error) {
 	h.buflen += n
 
 	return lenp, nil
+}
+
+// simdEigentreeHeight is the height of the smallest eigentree that fills
+// every SIMD lane.
+const simdEigentreeHeight = 4 // log2(guts.MaxSIMD)
+
+// absorb hashes the full chunks in buf, which must not include the final
+// chunk of the message, and pushes the resulting eigentrees.
+func (h *Hasher) absorb(buf []byte) {
+	for len(buf) > 0 {
+		chunks := uint64(len(buf) / guts.ChunkSize)
+		height := min(bits.TrailingZeros64(h.counter), bits.Len64(chunks)-1)
+		if height >= simdEigentreeHeight {
+			size := guts.ChunkSize << height
+			var node guts.Node
+			if h.serial {
+				node = guts.CompressEigentreeSerial(buf[:size], &h.key, h.counter, h.flags)
+			} else {
+				node = guts.CompressEigentree(buf[:size], &h.key, h.counter, h.flags)
+			}
+			h.pushSubtree(guts.ChainingValue(node), height)
+			buf = buf[size:]
+			continue
+		}
+
+		// The eigentrees up to the next MaxSIMD boundary are too small to fill
+		// the SIMD lanes on their own. Their chunks are still independent, so
+		// hash them together and merge each tree afterwards.
+		run := guts.MaxSIMD - h.counter%guts.MaxSIMD
+		if run > chunks {
+			run = chunks
+		}
+		var cvs [guts.MaxSIMD][8]uint32
+		guts.ChunkCVs(cvs[:run], buf[:run*guts.ChunkSize], &h.key, h.counter, h.flags)
+		for i := uint64(0); i < run; {
+			height := min(bits.TrailingZeros64(h.counter), bits.Len64(run-i)-1)
+			size := uint64(1) << height
+			cv := cvs[i]
+			if size > 1 {
+				cv = guts.ChainingValue(guts.MergeCVs(cvs[i:i+size], &h.key, h.flags))
+			}
+			h.pushSubtree(cv, height)
+			i += size
+		}
+		buf = buf[run*guts.ChunkSize:]
+	}
+}
+
+// absorbParallel is equivalent to absorb, but hashes the large eigentrees of
+// buf concurrently.
+func (h *Hasher) absorbParallel(buf []byte) {
+	// The workers capture copies of the key and flags rather than h, so that
+	// a Hasher which never takes this path can stay on its caller's stack.
+	key, flags, counter := h.key, h.flags, h.counter
+	trees := guts.Eigentrees(counter, uint64(len(buf)/guts.ChunkSize))
+	cvs := make([][8]uint32, len(trees))
+	offsets := make([]int, len(trees))
+	offset := 0
+	for i, height := range trees {
+		offsets[i] = offset
+		offset += guts.ChunkSize << height
+	}
+	parallelFor(len(trees), func(i int) {
+		if trees[i] < simdEigentreeHeight {
+			return // batched below
+		}
+		size := guts.ChunkSize << trees[i]
+		treeCounter := counter + uint64(offsets[i]/guts.ChunkSize)
+		cvs[i] = guts.ChainingValue(guts.CompressEigentree(buf[offsets[i]:offsets[i]+size], &key, treeCounter, flags))
+	})
+	for i := 0; i < len(trees); {
+		if trees[i] >= simdEigentreeHeight {
+			h.pushSubtree(cvs[i], trees[i])
+			i++
+			continue
+		}
+		// absorb decomposes a run of small eigentrees into exactly these
+		// trees, and hashes their chunks together.
+		end := i
+		for end < len(trees) && trees[end] < simdEigentreeHeight {
+			end++
+		}
+		stop := len(buf)
+		if end < len(trees) {
+			stop = offsets[end]
+		}
+		h.absorb(buf[offsets[i]:stop])
+		i = end
+	}
 }
 
 // Sum implements hash.Hash.

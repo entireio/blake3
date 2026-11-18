@@ -77,66 +77,146 @@ func CompressEigentreeSerial(buf []byte, key *[8]uint32, counter uint64, flags u
 	return compressEigentree(buf, key, counter, flags, false)
 }
 
+// ChunkCVs computes the chaining values of len(cvs) consecutive full chunks.
+// buf must hold exactly len(cvs)*ChunkSize bytes; counter is the index of the
+// first chunk.
+func ChunkCVs(cvs [][8]uint32, buf []byte, key *[8]uint32, counter uint64, flags uint32) {
+	if len(buf) != len(cvs)*ChunkSize {
+		panic("guts: buffer does not match chaining value count")
+	}
+	compressChunks(cvs, buf, key, counter, flags)
+}
+
+// MergeCVs returns the root node of the subtree whose leaves, left to right,
+// have the chaining values cvs. It panics if len(cvs) < 2 and overwrites cvs.
+//
+// The number of leaves need not be a power of two; BLAKE3 subtrees are
+// left-complete, so pairing neighbours and carrying an odd trailing value
+// reproduces the tree layout.
+func MergeCVs(cvs [][8]uint32, key *[8]uint32, flags uint32) Node {
+	n := len(cvs)
+	if n < 2 {
+		panic("guts: cannot merge fewer than two chaining values")
+	}
+	for n > 2 {
+		half := n / 2
+		compressParents(cvs[:half], cvs[:2*half], key, flags)
+		if n%2 != 0 {
+			cvs[half] = cvs[n-1]
+			half++
+		}
+		n = half
+	}
+	return ParentNode(cvs[0], cvs[1], key, flags)
+}
+
+// CompressBuffer compresses up to MaxSIMD chunks in parallel and returns their
+// root node.
+func CompressBuffer(buf *[MaxSIMD * ChunkSize]byte, buflen int, key *[8]uint32, counter uint64, flags uint32) Node {
+	if buflen <= ChunkSize {
+		return CompressChunk(buf[:buflen], key, counter, flags)
+	}
+	var cvs [MaxSIMD][8]uint32
+	n := buflen / ChunkSize
+	compressChunks(cvs[:n], buf[:n*ChunkSize], key, counter, flags)
+	if buflen%ChunkSize != 0 {
+		cvs[n] = ChainingValue(CompressChunk(buf[n*ChunkSize:buflen], key, counter+uint64(n), flags))
+		n++
+	}
+	return MergeCVs(cvs[:n], key, flags)
+}
+
+// compressSmallSubtree returns the root node of a subtree of at most MaxSIMD
+// full chunks.
+func compressSmallSubtree(buf []byte, key *[8]uint32, counter uint64, flags uint32) Node {
+	var cvs [MaxSIMD][8]uint32
+	n := len(buf) / ChunkSize
+	compressChunks(cvs[:n], buf, key, counter, flags)
+	return MergeCVs(cvs[:n], key, flags)
+}
+
+// subtreeCVs reduces a subtree of MaxSIMD<<k chunks to the MaxSIMD chaining
+// values k levels above its leaves.
+//
+// Reducing both halves to MaxSIMD values before merging them means that every
+// parent compression on the way up is one full batch of MaxSIMD, however large
+// the subtree is, and that the working memory is a couple of batches per
+// level rather than a chaining value per chunk.
+func subtreeCVs(out *[MaxSIMD][8]uint32, buf []byte, key *[8]uint32, counter uint64, flags uint32) {
+	if len(buf) == MaxSIMD*ChunkSize {
+		compressChunks(out[:], buf, key, counter, flags)
+		return
+	}
+	var cvs [2 * MaxSIMD][8]uint32
+	half := len(buf) / 2
+	subtreeCVs((*[MaxSIMD][8]uint32)(cvs[:MaxSIMD]), buf[:half], key, counter, flags)
+	subtreeCVs((*[MaxSIMD][8]uint32)(cvs[MaxSIMD:]), buf[half:], key, counter+uint64(half/ChunkSize), flags)
+	compressParents(out[:], cvs[:], key, flags)
+}
+
+// compressSubtree returns the root node of a subtree of MaxSIMD<<k chunks
+// without allocating or starting goroutines.
+func compressSubtree(buf []byte, key *[8]uint32, counter uint64, flags uint32) Node {
+	var cvs [MaxSIMD][8]uint32
+	subtreeCVs(&cvs, buf, key, counter, flags)
+	return MergeCVs(cvs[:], key, flags)
+}
+
 func compressEigentree(buf []byte, key *[8]uint32, counter uint64, flags uint32, parallel bool) Node {
-	if numChunks := uint64(len(buf) / ChunkSize); bits.OnesCount64(numChunks) != 1 {
+	numChunks := len(buf) / ChunkSize
+	if bits.OnesCount64(uint64(numChunks)) != 1 {
 		panic("non-power-of-two eigentree size")
 	} else if numChunks == 1 {
 		return CompressChunk(buf, key, counter, flags)
-	} else if numChunks <= MaxSIMD {
-		buflen := len(buf)
-		if cap(buf) < MaxSIMD*ChunkSize {
-			buf = append(buf, make([]byte, MaxSIMD*ChunkSize-len(buf))...)
-		}
-		return CompressBuffer((*[MaxSIMD * ChunkSize]byte)(buf[:MaxSIMD*ChunkSize]), buflen, key, counter, flags)
-	} else {
-		cvs := make([][8]uint32, numChunks/MaxSIMD)
-		compressGroup := func(i int) {
-			start := i * MaxSIMD * ChunkSize
-			cvs[i] = ChainingValue(CompressBuffer(
-				(*[MaxSIMD * ChunkSize]byte)(buf[start:]),
-				MaxSIMD*ChunkSize,
-				key,
-				counter+uint64(MaxSIMD*i),
-				flags,
-			))
-		}
-		if parallel && len(cvs) <= runtime.GOMAXPROCS(0) {
-			// For a small tree, keep the compression call directly in each
-			// goroutine. This lets the compiler optimize the hot SIMD call site
-			// and preserves upstream's low-latency AMD64 path.
-			var wg sync.WaitGroup
-			wg.Add(len(cvs))
-			for i := range cvs {
-				go func(i int) {
-					defer wg.Done()
-					start := i * MaxSIMD * ChunkSize
-					cvs[i] = ChainingValue(CompressBuffer(
-						(*[MaxSIMD * ChunkSize]byte)(buf[start:]),
-						MaxSIMD*ChunkSize,
-						key,
-						counter+uint64(MaxSIMD*i),
-						flags,
-					))
-				}(i)
-			}
-			wg.Wait()
-		} else if parallel {
-			parallelFor(len(cvs), compressGroup)
-		} else {
-			for i := range cvs {
-				compressGroup(i)
-			}
-		}
-
-		var rec func(cvs [][8]uint32) Node
-		rec = func(cvs [][8]uint32) Node {
-			if len(cvs) == 2 {
-				return ParentNode(cvs[0], cvs[1], key, flags)
-			} else if len(cvs) == MaxSIMD {
-				return mergeSubtrees((*[MaxSIMD][8]uint32)(cvs), MaxSIMD, key, flags)
-			}
-			return ParentNode(ChainingValue(rec(cvs[:len(cvs)/2])), ChainingValue(rec(cvs[len(cvs)/2:])), key, flags)
-		}
-		return rec(cvs)
+	} else if numChunks < MaxSIMD {
+		return compressSmallSubtree(buf, key, counter, flags)
 	}
+
+	workers := 1
+	if parallel {
+		workers = runtime.GOMAXPROCS(0)
+	}
+	// Split the tree into equal subtrees for the workers to claim. A few per
+	// worker lets the faster cores of an uneven machine take more of them.
+	unit := numChunks
+	for unit > MaxSIMD && numChunks/unit < 4*workers {
+		unit /= 2
+	}
+	if workers == 1 || unit == numChunks {
+		return compressSubtree(buf, key, counter, flags)
+	}
+
+	// The workers capture the key. Hand them a copy, so that the caller's key
+	// (typically a field of a Hasher) need not escape to the heap just
+	// because a large tree might be hashed concurrently.
+	return compressEigentreeParallel(buf, *key, counter, flags, unit, workers)
+}
+
+func compressEigentreeParallel(buf []byte, key [8]uint32, counter uint64, flags uint32, unit, workers int) Node {
+	cvs := make([][8]uint32, len(buf)/(unit*ChunkSize))
+	compressUnit := func(i int) {
+		start := i * unit * ChunkSize
+		cvs[i] = ChainingValue(compressSubtree(
+			buf[start:start+unit*ChunkSize],
+			&key,
+			counter+uint64(unit*i),
+			flags,
+		))
+	}
+	if len(cvs) <= workers {
+		// For a small tree, keep the compression call directly in each
+		// goroutine and skip the shared work counter.
+		var wg sync.WaitGroup
+		wg.Add(len(cvs))
+		for i := range cvs {
+			go func(i int) {
+				defer wg.Done()
+				compressUnit(i)
+			}(i)
+		}
+		wg.Wait()
+	} else {
+		parallelFor(len(cvs), compressUnit)
+	}
+	return MergeCVs(cvs, &key, flags)
 }

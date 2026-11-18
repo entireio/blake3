@@ -35,74 +35,37 @@ func compressNodeNEON(n *Node, out *[16]uint32)
 //go:noescape
 func compressChunksNEON(cvs *[4][8]uint32, buf *[4 * ChunkSize]byte, key *[8]uint32, counter uint64, flags uint32)
 
-// CompressBuffer compresses up to MaxSIMD chunks in parallel and returns their
-// root node.
-func CompressBuffer(buf *[MaxSIMD * ChunkSize]byte, buflen int, key *[8]uint32, counter uint64, flags uint32) Node {
-	if buflen <= ChunkSize {
-		return CompressChunk(buf[:buflen], key, counter, flags)
-	}
-	if !haveNEON {
-		return compressBufferGeneric(buf, buflen, key, counter, flags)
-	}
-
-	var cvs [MaxSIMD][8]uint32
-	numChunks := uint64(buflen / ChunkSize)
-	var group uint64
-	for ; (group+1)*4 <= numChunks; group++ {
-		compressChunksNEON(
-			(*[4][8]uint32)(unsafe.Pointer(&cvs[group*4])),
-			(*[4 * ChunkSize]byte)(unsafe.Pointer(&buf[group*4*ChunkSize])),
-			key,
-			counter+group*4,
-			flags,
-		)
-	}
-	for i := group * 4; i < numChunks; i++ {
-		cvs[i] = ChainingValue(CompressChunk(buf[i*ChunkSize:(i+1)*ChunkSize], key, counter+i, flags))
-	}
-	numCVs := numChunks
-	if buflen%ChunkSize != 0 {
-		cvs[numCVs] = ChainingValue(CompressChunk(buf[numCVs*ChunkSize:buflen], key, counter+numCVs, flags))
-		numCVs++
-	}
-	return mergeSubtrees(&cvs, numCVs, key, flags)
+// CompressNode compresses a node into a 16-word output.
+func CompressNode(n Node) [16]uint32 {
+	return compressNodeGeneric(n)
 }
 
 // CompressChunk compresses a single chunk, returning its final uncompressed
 // node.
 func CompressChunk(chunk []byte, key *[8]uint32, counter uint64, flags uint32) Node {
-	n := Node{
-		CV:       *key,
-		Counter:  counter,
-		BlockLen: BlockSize,
-		Flags:    flags | FlagChunkStart,
-	}
-	var block [BlockSize]byte
-	for len(chunk) > BlockSize {
-		copy(block[:], chunk)
-		chunk = chunk[BlockSize:]
-		n.Block = BytesToWords(block)
-		n.CV = ChainingValue(n)
-		n.Flags &^= FlagChunkStart
-	}
-	block = [BlockSize]byte{}
-	n.BlockLen = uint32(copy(block[:], chunk))
-	n.Block = BytesToWords(block)
-	n.Flags |= FlagChunkEnd
-	return n
+	return compressChunkGeneric(chunk, key, counter, flags)
 }
 
 // CompressBlocks compresses MaxSIMD copies of n with successive counters.
 func CompressBlocks(out *[MaxSIMD * BlockSize]byte, n Node) {
-	var outs [MaxSIMD][BlockSize]byte
-	compressBlocksGeneric(&outs, n)
-	for i := range outs {
-		copy(out[i*BlockSize:], outs[i][:])
-	}
+	compressBlocksGeneric(out, n)
 }
 
-func mergeSubtrees(cvs *[MaxSIMD][8]uint32, numCVs uint64, key *[8]uint32, flags uint32) Node {
-	return mergeSubtreesGeneric(cvs, numCVs, key, flags)
+// compressChunks stores the chaining values of len(cvs) full chunks in cvs.
+func compressChunks(cvs [][8]uint32, buf []byte, key *[8]uint32, counter uint64, flags uint32) {
+	if haveNEON {
+		for len(cvs) >= 4 {
+			compressChunksNEON((*[4][8]uint32)(cvs), (*[4 * ChunkSize]byte)(buf), key, counter, flags)
+			cvs, buf, counter = cvs[4:], buf[4*ChunkSize:], counter+4
+		}
+	}
+	compressChunksGeneric(cvs, buf, key, counter, flags)
+}
+
+// compressParents stores the chaining value of the parent of cvs[2i] and
+// cvs[2i+1] in parents[i]. parents may alias the front of cvs.
+func compressParents(parents, cvs [][8]uint32, key *[8]uint32, flags uint32) {
+	compressParentsGeneric(parents, cvs, key, flags)
 }
 
 // BytesToWords converts 64 little-endian bytes to 16 words.

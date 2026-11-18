@@ -283,6 +283,79 @@ func TestNewSerialMatchesNew(t *testing.T) {
 	}
 }
 
+// TestWriteSizes checks that every way of feeding a message to a Hasher agrees
+// with writing it one block at a time, which only ever exercises the
+// single-chunk path. The lengths straddle every SIMD group boundary.
+func TestWriteSizes(t *testing.T) {
+	input := make([]byte, 3<<20)
+	for i := range input {
+		input[i] = byte(i*i>>3 + i)
+	}
+	var lengths []int
+	for chunks := 0; chunks <= 4*guts.MaxSIMD+1; chunks++ {
+		for _, delta := range []int{-1, 0, 1, 517} {
+			if n := chunks*blake3.ChunkSize + delta; n >= 0 {
+				lengths = append(lengths, n)
+			}
+		}
+	}
+	lengths = append(lengths, 255<<10, 256<<10+1, 1<<20, 1<<20+1024, 3<<20-1, 3<<20)
+
+	key := []byte(testVectors.Key)
+	for _, length := range lengths {
+		msg := input[:length]
+		ref := blake3.NewSerial(32, key)
+		for i := 0; i < len(msg); i += 64 {
+			ref.Write(msg[i:min(i+64, len(msg))])
+		}
+		want := ref.Sum(nil)
+
+		check := func(name string, h *blake3.Hasher) {
+			t.Helper()
+			if got := h.Sum(nil); !bytes.Equal(got, want) {
+				t.Fatalf("length %d: %s mismatch\nwant %x\n got %x", length, name, want, got)
+			}
+		}
+		h := blake3.New(32, key)
+		h.Write(msg)
+		check("New", h)
+
+		h = blake3.NewSerial(32, key)
+		h.Write(msg)
+		check("NewSerial", h)
+
+		// Unaligned writes leave the hasher at every possible chunk counter
+		// when the bulk path starts.
+		for _, first := range []int{1, 1023, 1024, 1025, 3 * 1024, 5*1024 + 7, 17 * 1024, 100 * 1024} {
+			if first >= len(msg) {
+				continue
+			}
+			for _, serial := range []bool{false, true} {
+				h = blake3.New(32, key)
+				if serial {
+					h = blake3.NewSerial(32, key)
+				}
+				h.Write(msg[:first])
+				h.Write(msg[first:])
+				check(fmt.Sprintf("split at %d (serial=%v)", first, serial), h)
+			}
+		}
+
+		var keyArr [blake3.KeySize]byte
+		copy(keyArr[:], key)
+		if got := blake3.Sum256Keyed(keyArr, msg); !bytes.Equal(got[:], want) {
+			t.Fatalf("length %d: Sum256Keyed mismatch", length)
+		}
+		unkeyed := blake3.NewSerial(32, nil)
+		for i := 0; i < len(msg); i += 64 {
+			unkeyed.Write(msg[i:min(i+64, len(msg))])
+		}
+		if got := blake3.Sum256(msg); !bytes.Equal(got[:], unkeyed.Sum(nil)) {
+			t.Fatalf("length %d: Sum256 mismatch", length)
+		}
+	}
+}
+
 type nopReader struct{}
 
 func (nopReader) Read(p []byte) (int, error) { return len(p), nil }
@@ -291,6 +364,25 @@ func BenchmarkWrite(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(1024)
 	io.CopyN(blake3.New(0, nil), nopReader{}, int64(b.N*1024))
+}
+
+// BenchmarkSum256Serial measures single-core throughput: NewSerial never
+// spawns worker goroutines, whatever the input size.
+func BenchmarkSum256Serial(b *testing.B) {
+	for _, size := range []int64{16384, 65536, 1048576, 16777216} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(size)
+			buf := make([]byte, size)
+			var out [32]byte
+			h := blake3.NewSerial(32, nil)
+			for i := 0; i < b.N; i++ {
+				h.Reset()
+				h.Write(buf)
+				h.Sum(out[:0])
+			}
+		})
+	}
 }
 
 func BenchmarkXOF(b *testing.B) {
@@ -309,7 +401,7 @@ func BenchmarkXOF(b *testing.B) {
 }
 
 func BenchmarkSum256(b *testing.B) {
-	for _, size := range []int64{64, 1024, 65536, 1048576} {
+	for _, size := range []int64{64, 1024, 2048, 4096, 8192, 16384, 65536, 1048576} {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(size)

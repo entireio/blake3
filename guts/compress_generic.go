@@ -1,12 +1,9 @@
 package guts
 
-import (
-	"bytes"
-	"math/bits"
-)
+import "math/bits"
 
-// CompressNode compresses a node into a 16-word output.
-func CompressNode(n Node) (out [16]uint32) {
+// compressNodeGeneric is the portable single-block compression function.
+func compressNodeGeneric(n Node) (out [16]uint32) {
 	g := func(a, b, c, d, mx, my uint32) (uint32, uint32, uint32, uint32) {
 		a += b + mx
 		d = bits.RotateLeft32(d^a, -16)
@@ -110,36 +107,53 @@ func ChainingValue(n Node) (cv [8]uint32) {
 	return
 }
 
-func compressBufferGeneric(buf *[MaxSIMD * ChunkSize]byte, buflen int, key *[8]uint32, counter uint64, flags uint32) (n Node) {
-	if buflen <= ChunkSize {
-		return CompressChunk(buf[:buflen], key, counter, flags)
+// compressChunkGeneric is the portable implementation of CompressChunk.
+func compressChunkGeneric(chunk []byte, key *[8]uint32, counter uint64, flags uint32) Node {
+	n := Node{
+		CV:       *key,
+		Counter:  counter,
+		BlockLen: BlockSize,
+		Flags:    flags | FlagChunkStart,
 	}
-	var cvs [MaxSIMD][8]uint32
-	var numCVs uint64
-	for bb := bytes.NewBuffer(buf[:buflen]); bb.Len() > 0; numCVs++ {
-		cvs[numCVs] = ChainingValue(CompressChunk(bb.Next(ChunkSize), key, counter+numCVs, flags))
+	var block [BlockSize]byte
+	for len(chunk) > BlockSize {
+		copy(block[:], chunk)
+		chunk = chunk[BlockSize:]
+		n.Block = BytesToWords(block)
+		cv := compressNodeGeneric(n)
+		copy(n.CV[:], cv[:8])
+		n.Flags &^= FlagChunkStart
 	}
-	return mergeSubtrees(&cvs, numCVs, key, flags)
+	// pad last block with zeros
+	block = [BlockSize]byte{}
+	n.BlockLen = uint32(copy(block[:], chunk))
+	n.Block = BytesToWords(block)
+	n.Flags |= FlagChunkEnd
+	return n
 }
 
-func compressBlocksGeneric(outs *[MaxSIMD][64]byte, n Node) {
-	for i := range outs {
-		outs[i] = WordsToBytes(CompressNode(n))
+// compressChunksGeneric is the portable implementation of compressChunks.
+func compressChunksGeneric(cvs [][8]uint32, buf []byte, key *[8]uint32, counter uint64, flags uint32) {
+	for i := range cvs {
+		full := compressNodeGeneric(compressChunkGeneric(buf[i*ChunkSize:(i+1)*ChunkSize], key, counter+uint64(i), flags))
+		copy(cvs[i][:], full[:8])
+	}
+}
+
+// compressParentsGeneric is the portable implementation of compressParents.
+// parents may alias the front of cvs.
+func compressParentsGeneric(parents, cvs [][8]uint32, key *[8]uint32, flags uint32) {
+	for i := range parents {
+		full := compressNodeGeneric(ParentNode(cvs[2*i], cvs[2*i+1], key, flags))
+		copy(parents[i][:], full[:8])
+	}
+}
+
+// compressBlocksGeneric is the portable implementation of CompressBlocks.
+func compressBlocksGeneric(out *[MaxSIMD * BlockSize]byte, n Node) {
+	for i := 0; i < MaxSIMD; i++ {
+		block := WordsToBytes(compressNodeGeneric(n))
+		copy(out[i*BlockSize:], block[:])
 		n.Counter++
 	}
-}
-
-func mergeSubtreesGeneric(cvs *[MaxSIMD][8]uint32, numCVs uint64, key *[8]uint32, flags uint32) Node {
-	for numCVs > 2 {
-		rem := numCVs / 2
-		for i := range cvs[:rem] {
-			cvs[i] = ChainingValue(ParentNode(cvs[i*2], cvs[i*2+1], key, flags))
-		}
-		if numCVs%2 != 0 {
-			cvs[rem] = cvs[rem*2]
-			rem++
-		}
-		numCVs = rem
-	}
-	return ParentNode(cvs[0], cvs[1], key, flags)
 }
