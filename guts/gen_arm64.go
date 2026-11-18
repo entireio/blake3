@@ -13,10 +13,14 @@
 // Every kernel keeps the sixteen state words of four independent compressions
 // in V0-V15, one word per register and one lane per 32-bit element, so a G
 // function is a handful of whole-register operations and a round needs no
-// shuffles. The rounds live in a subroutine that the kernels call with BL; it
-// expects message words 0-10 in V16-V26 and words 11-15 in the caller's frame,
-// uses V27 as the rotate-by-8 table and V28-V31 as scratch, and preserves
-// everything else but the state.
+// shuffles. The rounds live in a subroutine per instruction set that the
+// kernels call with BL; it expects the transposed message words wherever
+// (variant).msg says they are, and preserves everything but the state and
+// its scratch registers.
+//
+//	NEON: V16-V26 message words 0-10, V27 rotate-by-8 table, V28-V31 scratch,
+//	      message words 11-15 in the caller's frame.
+//	SVE2: V16-V31 message words 0-15.
 //
 // NEON has no rotate instruction. Rotating by 16 is a halfword swap and
 // rotating by 8 a byte shuffle; the other two XOR into a scratch register and
@@ -24,6 +28,13 @@
 // instructions for "xor, rotate" instead of four. Four scratch registers let
 // the four G functions of a half round stay interleaved, which matters to
 // cores that do not rename registers.
+//
+// SVE2 has XAR, "xor and rotate right", which collapses each of those pairs
+// into one instruction and needs no scratch register or table. The Go
+// assembler does not know SVE, so XAR is emitted as a WORD with its mnemonic
+// alongside. Only the low 128 bits of each Z register are meaningful here:
+// NEON instructions zero the rest and XAR treats every element independently,
+// so the kernels are correct for any vector length.
 package main
 
 import (
@@ -60,17 +71,21 @@ const (
 	frameSize      = 136 // locals occupy 8(RSP) up to 144(RSP)
 )
 
-// A variant describes a kernel family's register plan.
+// A variant describes one instruction set's register plan.
 type variant struct {
 	name    string
+	sve2    bool
 	msgRegs int // message words kept in registers, starting at V16
 }
 
-var neon = variant{name: "NEON", msgRegs: 11}
+var (
+	neon = variant{name: "NEON", msgRegs: 11}
+	sve2 = variant{name: "SVE2", sve2: true, msgRegs: 16}
+)
 
 const (
-	rot8Table = 27
-	scratch   = 28 // V28-V31
+	rot8Table = 27 // NEON only
+	scratch   = 28 // NEON only: V28-V31
 )
 
 // msgReg reports the register holding message word i, if any.
@@ -97,6 +112,8 @@ func (g *gen) count(ins string) {
 	op, args, _ := strings.Cut(ins, " ")
 	var kind string
 	switch {
+	case op == "WORD":
+		kind = "vector"
 	case strings.HasPrefix(op, "VLD1"):
 		kind = "load"
 	case op == "FMOVQ" || op == "MOVD" || op == "MOVWU":
@@ -137,6 +154,15 @@ func (g *gen) comment(format string, args ...any) {
 
 func (g *gen) label(name string) {
 	fmt.Fprintf(&g.buf, "%s:\n", name)
+}
+
+// xar emits Zdn = ror(Zdn ^ Zm, n) on 32-bit elements.
+func (g *gen) xar(dn, m, n int) {
+	// 00000100 tszh 1 tszl imm3 001101 Zm Zdn, with tszh:tszl:imm3 = 64-n
+	// for 32-bit elements.
+	enc := 64 - uint32(n)
+	word := 0x04203400 | enc>>5<<22 | enc>>3&3<<19 | enc&7<<16 | uint32(m)<<5 | uint32(dn)
+	g.ins("WORD $0x%08x // xar z%d.s, z%d.s, z%d.s, #%d", word, dn, dn, m, n)
 }
 
 func (g *gen) consts() {
@@ -182,6 +208,12 @@ func (g *gen) each(format string, regs ...[4]int) {
 
 // xorRotate emits x = ror(x ^ y, n) for each of the four G functions.
 func (g *gen) xorRotate(v variant, x, y [4]int, n int) {
+	if v.sve2 {
+		for i := range x {
+			g.xar(x[i], y[i], n)
+		}
+		return
+	}
 	tmp := [4]int{scratch, scratch + 1, scratch + 2, scratch + 3}
 	switch n {
 	case 16:
@@ -293,7 +325,9 @@ func (g *gen) hash4(v variant) {
 	g.ins("VUZP2 V9.S4, V8.S4, V11.S4")
 	g.ins("FMOVQ F10, %d(RSP)", frameCounterLo)
 	g.ins("FMOVQ F11, %d(RSP)", frameCounterHi)
-	g.ins("FMOVQ %d(R12), F%d", constRot8, rot8Table)
+	if !v.sve2 {
+		g.ins("FMOVQ %d(R12), F%d", constRot8, rot8Table)
+	}
 
 	g.comment("R13 holds the flags of the next block")
 	g.ins("ORR R10, R9, R13")
@@ -397,7 +431,9 @@ func (g *gen) xof4(v variant) {
 		g.ins("VLD1R.P 4(R2), [V%d.S4]", i)
 	}
 	g.ins("VLD1 (R12), [V8.B16, V9.B16, V10.B16, V11.B16]")
-	g.ins("FMOVQ %d(R12), F%d", constRot8, rot8Table)
+	if !v.sve2 {
+		g.ins("FMOVQ %d(R12), F%d", constRot8, rot8Table)
+	}
 	g.ins("BL blake3rounds4%s<>(SB)", v.name)
 
 	g.comment("output words 0-7 are the XOR of the two halves of the state;")
@@ -432,7 +468,7 @@ func main() {
 	g.raw("#include \"textflag.h\"")
 	g.raw("")
 	g.consts()
-	for _, v := range []variant{neon} {
+	for _, v := range []variant{neon, sve2} {
 		g.rounds(v)
 		g.hash4(v)
 		g.xof4(v)
@@ -440,7 +476,7 @@ func main() {
 
 	if *stats {
 		fmt.Println("instructions per 64-byte block of four lanes (rounds + loop body):")
-		for _, v := range []variant{neon} {
+		for _, v := range []variant{neon, sve2} {
 			total := map[string]int{}
 			for _, section := range []string{"rounds" + v.name, "block" + v.name} {
 				for kind, n := range g.counts[section] {

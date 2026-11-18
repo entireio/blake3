@@ -25,8 +25,8 @@ var (
 // portable implementation for differential checks.
 var haveNEON = true
 
-// hash4NEON hashes the same number of 64-byte blocks from each of four
-// inputs, and stores the resulting chaining values in out. Every lane
+// hash4NEON and hash4SVE2 hash the same number of 64-byte blocks from each of
+// four inputs, and store the resulting chaining values in out. Every lane
 // starts from key; lane i uses counter+i*inc. Each block is compressed with
 // flags, plus flagsStart for the first block and flagsEnd for the last.
 //
@@ -36,11 +36,25 @@ var haveNEON = true
 //go:noescape
 func hash4NEON(out *[4][8]uint32, p0, p1, p2, p3 *byte, blocks int, key *[8]uint32, counter, inc uint64, flags, flagsStart, flagsEnd uint32)
 
-// xof4NEON compresses n with the counters n.Counter through n.Counter+3 and
-// stores the four 64-byte outputs in out.
+//go:noescape
+func hash4SVE2(out *[4][8]uint32, p0, p1, p2, p3 *byte, blocks int, key *[8]uint32, counter, inc uint64, flags, flagsStart, flagsEnd uint32)
+
+// xof4NEON and xof4SVE2 compress n with the counters n.Counter through
+// n.Counter+3 and store the four 64-byte outputs in out.
 //
 //go:noescape
 func xof4NEON(out *[4 * BlockSize]byte, n *Node)
+
+//go:noescape
+func xof4SVE2(out *[4 * BlockSize]byte, n *Node)
+
+func hash4(out *[4][8]uint32, p0, p1, p2, p3 *byte, blocks int, key *[8]uint32, counter, inc uint64, flags, flagsStart, flagsEnd uint32) {
+	if haveSVE2 {
+		hash4SVE2(out, p0, p1, p2, p3, blocks, key, counter, inc, flags, flagsStart, flagsEnd)
+	} else {
+		hash4NEON(out, p0, p1, p2, p3, blocks, key, counter, inc, flags, flagsStart, flagsEnd)
+	}
+}
 
 // minLanes is the smallest number of inputs worth a four-lane call. A call
 // costs about as much as 1.4 scalar compressions per block on the cores this
@@ -65,7 +79,12 @@ func CompressBlocks(out *[MaxSIMD * BlockSize]byte, n Node) {
 		return
 	}
 	for i := 0; i < MaxSIMD; i += 4 {
-		xof4NEON((*[4 * BlockSize]byte)(out[i*BlockSize:]), &n)
+		lanes := (*[4 * BlockSize]byte)(out[i*BlockSize:])
+		if haveSVE2 {
+			xof4SVE2(lanes, &n)
+		} else {
+			xof4NEON(lanes, &n)
+		}
 		n.Counter += 4
 	}
 }
@@ -78,7 +97,7 @@ func compressChunks(cvs [][8]uint32, buf []byte, key *[8]uint32, counter uint64,
 	}
 	const blocks = ChunkSize / BlockSize
 	for len(cvs) >= 4 {
-		hash4NEON((*[4][8]uint32)(cvs),
+		hash4((*[4][8]uint32)(cvs),
 			&buf[0], &buf[ChunkSize], &buf[2*ChunkSize], &buf[3*ChunkSize],
 			blocks, key, counter, 1, flags, FlagChunkStart, FlagChunkEnd)
 		cvs, buf, counter = cvs[4:], buf[4*ChunkSize:], counter+4
@@ -92,7 +111,7 @@ func compressChunks(cvs [][8]uint32, buf []byte, key *[8]uint32, counter uint64,
 		for i := 1; i < n; i++ {
 			lanes[i] = &buf[i*ChunkSize]
 		}
-		hash4NEON(&out, lanes[0], lanes[1], lanes[2], lanes[3],
+		hash4(&out, lanes[0], lanes[1], lanes[2], lanes[3],
 			blocks, key, counter, 1, flags, FlagChunkStart, FlagChunkEnd)
 		copy(cvs, out[:])
 		return
@@ -114,7 +133,7 @@ func compressParents(parents, cvs [][8]uint32, key *[8]uint32, flags uint32) {
 	// anything, so writing parents over the front of cvs is safe.
 	pair := func(i int) *byte { return (*byte)(unsafe.Pointer(&cvs[2*i])) }
 	for len(parents) >= 4 {
-		hash4NEON((*[4][8]uint32)(parents), pair(0), pair(1), pair(2), pair(3),
+		hash4((*[4][8]uint32)(parents), pair(0), pair(1), pair(2), pair(3),
 			1, key, 0, 0, flags|FlagParent, 0, 0)
 		parents, cvs = parents[4:], cvs[8:]
 	}
@@ -124,7 +143,7 @@ func compressParents(parents, cvs [][8]uint32, key *[8]uint32, flags uint32) {
 		for i := 1; i < n; i++ {
 			lanes[i] = pair(i)
 		}
-		hash4NEON(&out, lanes[0], lanes[1], lanes[2], lanes[3],
+		hash4(&out, lanes[0], lanes[1], lanes[2], lanes[3],
 			1, key, 0, 0, flags|FlagParent, 0, 0)
 		copy(parents, out[:])
 		return

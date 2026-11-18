@@ -1267,3 +1267,850 @@ TEXT ·xof4NEON(SB), NOSPLIT, $136-16
 	FMOVQ F22, 176(R0)
 	FMOVQ F23, 240(R0)
 	RET
+
+// blake3rounds4SVE2 runs the seven rounds of four compressions whose state
+// is in V0-V15. See gen_arm64.go for where it expects the message words.
+TEXT blake3rounds4SVE2<>(SB), NOSPLIT|NOFRAME, $0-0
+	// round 1, columns
+	VADD V16.S4, V0.S4, V0.S4
+	VADD V18.S4, V1.S4, V1.S4
+	VADD V20.S4, V2.S4, V2.S4
+	VADD V22.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0470340c // xar z12.s, z12.s, z0.s, #16
+	WORD $0x0470342d // xar z13.s, z13.s, z1.s, #16
+	WORD $0x0470344e // xar z14.s, z14.s, z2.s, #16
+	WORD $0x0470346f // xar z15.s, z15.s, z3.s, #16
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04743504 // xar z4.s, z4.s, z8.s, #12
+	WORD $0x04743525 // xar z5.s, z5.s, z9.s, #12
+	WORD $0x04743546 // xar z6.s, z6.s, z10.s, #12
+	WORD $0x04743567 // xar z7.s, z7.s, z11.s, #12
+	VADD V17.S4, V0.S4, V0.S4
+	VADD V19.S4, V1.S4, V1.S4
+	VADD V21.S4, V2.S4, V2.S4
+	VADD V23.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0478340c // xar z12.s, z12.s, z0.s, #8
+	WORD $0x0478342d // xar z13.s, z13.s, z1.s, #8
+	WORD $0x0478344e // xar z14.s, z14.s, z2.s, #8
+	WORD $0x0478346f // xar z15.s, z15.s, z3.s, #8
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04793504 // xar z4.s, z4.s, z8.s, #7
+	WORD $0x04793525 // xar z5.s, z5.s, z9.s, #7
+	WORD $0x04793546 // xar z6.s, z6.s, z10.s, #7
+	WORD $0x04793567 // xar z7.s, z7.s, z11.s, #7
+	// round 1, diagonals
+	VADD V24.S4, V0.S4, V0.S4
+	VADD V26.S4, V1.S4, V1.S4
+	VADD V28.S4, V2.S4, V2.S4
+	VADD V30.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0470340f // xar z15.s, z15.s, z0.s, #16
+	WORD $0x0470342c // xar z12.s, z12.s, z1.s, #16
+	WORD $0x0470344d // xar z13.s, z13.s, z2.s, #16
+	WORD $0x0470346e // xar z14.s, z14.s, z3.s, #16
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04743545 // xar z5.s, z5.s, z10.s, #12
+	WORD $0x04743566 // xar z6.s, z6.s, z11.s, #12
+	WORD $0x04743507 // xar z7.s, z7.s, z8.s, #12
+	WORD $0x04743524 // xar z4.s, z4.s, z9.s, #12
+	VADD V25.S4, V0.S4, V0.S4
+	VADD V27.S4, V1.S4, V1.S4
+	VADD V29.S4, V2.S4, V2.S4
+	VADD V31.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0478340f // xar z15.s, z15.s, z0.s, #8
+	WORD $0x0478342c // xar z12.s, z12.s, z1.s, #8
+	WORD $0x0478344d // xar z13.s, z13.s, z2.s, #8
+	WORD $0x0478346e // xar z14.s, z14.s, z3.s, #8
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04793545 // xar z5.s, z5.s, z10.s, #7
+	WORD $0x04793566 // xar z6.s, z6.s, z11.s, #7
+	WORD $0x04793507 // xar z7.s, z7.s, z8.s, #7
+	WORD $0x04793524 // xar z4.s, z4.s, z9.s, #7
+	// round 2, columns
+	VADD V18.S4, V0.S4, V0.S4
+	VADD V19.S4, V1.S4, V1.S4
+	VADD V23.S4, V2.S4, V2.S4
+	VADD V20.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0470340c // xar z12.s, z12.s, z0.s, #16
+	WORD $0x0470342d // xar z13.s, z13.s, z1.s, #16
+	WORD $0x0470344e // xar z14.s, z14.s, z2.s, #16
+	WORD $0x0470346f // xar z15.s, z15.s, z3.s, #16
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04743504 // xar z4.s, z4.s, z8.s, #12
+	WORD $0x04743525 // xar z5.s, z5.s, z9.s, #12
+	WORD $0x04743546 // xar z6.s, z6.s, z10.s, #12
+	WORD $0x04743567 // xar z7.s, z7.s, z11.s, #12
+	VADD V22.S4, V0.S4, V0.S4
+	VADD V26.S4, V1.S4, V1.S4
+	VADD V16.S4, V2.S4, V2.S4
+	VADD V29.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0478340c // xar z12.s, z12.s, z0.s, #8
+	WORD $0x0478342d // xar z13.s, z13.s, z1.s, #8
+	WORD $0x0478344e // xar z14.s, z14.s, z2.s, #8
+	WORD $0x0478346f // xar z15.s, z15.s, z3.s, #8
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04793504 // xar z4.s, z4.s, z8.s, #7
+	WORD $0x04793525 // xar z5.s, z5.s, z9.s, #7
+	WORD $0x04793546 // xar z6.s, z6.s, z10.s, #7
+	WORD $0x04793567 // xar z7.s, z7.s, z11.s, #7
+	// round 2, diagonals
+	VADD V17.S4, V0.S4, V0.S4
+	VADD V28.S4, V1.S4, V1.S4
+	VADD V25.S4, V2.S4, V2.S4
+	VADD V31.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0470340f // xar z15.s, z15.s, z0.s, #16
+	WORD $0x0470342c // xar z12.s, z12.s, z1.s, #16
+	WORD $0x0470344d // xar z13.s, z13.s, z2.s, #16
+	WORD $0x0470346e // xar z14.s, z14.s, z3.s, #16
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04743545 // xar z5.s, z5.s, z10.s, #12
+	WORD $0x04743566 // xar z6.s, z6.s, z11.s, #12
+	WORD $0x04743507 // xar z7.s, z7.s, z8.s, #12
+	WORD $0x04743524 // xar z4.s, z4.s, z9.s, #12
+	VADD V27.S4, V0.S4, V0.S4
+	VADD V21.S4, V1.S4, V1.S4
+	VADD V30.S4, V2.S4, V2.S4
+	VADD V24.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0478340f // xar z15.s, z15.s, z0.s, #8
+	WORD $0x0478342c // xar z12.s, z12.s, z1.s, #8
+	WORD $0x0478344d // xar z13.s, z13.s, z2.s, #8
+	WORD $0x0478346e // xar z14.s, z14.s, z3.s, #8
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04793545 // xar z5.s, z5.s, z10.s, #7
+	WORD $0x04793566 // xar z6.s, z6.s, z11.s, #7
+	WORD $0x04793507 // xar z7.s, z7.s, z8.s, #7
+	WORD $0x04793524 // xar z4.s, z4.s, z9.s, #7
+	// round 3, columns
+	VADD V19.S4, V0.S4, V0.S4
+	VADD V26.S4, V1.S4, V1.S4
+	VADD V29.S4, V2.S4, V2.S4
+	VADD V23.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0470340c // xar z12.s, z12.s, z0.s, #16
+	WORD $0x0470342d // xar z13.s, z13.s, z1.s, #16
+	WORD $0x0470344e // xar z14.s, z14.s, z2.s, #16
+	WORD $0x0470346f // xar z15.s, z15.s, z3.s, #16
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04743504 // xar z4.s, z4.s, z8.s, #12
+	WORD $0x04743525 // xar z5.s, z5.s, z9.s, #12
+	WORD $0x04743546 // xar z6.s, z6.s, z10.s, #12
+	WORD $0x04743567 // xar z7.s, z7.s, z11.s, #12
+	VADD V20.S4, V0.S4, V0.S4
+	VADD V28.S4, V1.S4, V1.S4
+	VADD V18.S4, V2.S4, V2.S4
+	VADD V30.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0478340c // xar z12.s, z12.s, z0.s, #8
+	WORD $0x0478342d // xar z13.s, z13.s, z1.s, #8
+	WORD $0x0478344e // xar z14.s, z14.s, z2.s, #8
+	WORD $0x0478346f // xar z15.s, z15.s, z3.s, #8
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04793504 // xar z4.s, z4.s, z8.s, #7
+	WORD $0x04793525 // xar z5.s, z5.s, z9.s, #7
+	WORD $0x04793546 // xar z6.s, z6.s, z10.s, #7
+	WORD $0x04793567 // xar z7.s, z7.s, z11.s, #7
+	// round 3, diagonals
+	VADD V22.S4, V0.S4, V0.S4
+	VADD V25.S4, V1.S4, V1.S4
+	VADD V27.S4, V2.S4, V2.S4
+	VADD V24.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0470340f // xar z15.s, z15.s, z0.s, #16
+	WORD $0x0470342c // xar z12.s, z12.s, z1.s, #16
+	WORD $0x0470344d // xar z13.s, z13.s, z2.s, #16
+	WORD $0x0470346e // xar z14.s, z14.s, z3.s, #16
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04743545 // xar z5.s, z5.s, z10.s, #12
+	WORD $0x04743566 // xar z6.s, z6.s, z11.s, #12
+	WORD $0x04743507 // xar z7.s, z7.s, z8.s, #12
+	WORD $0x04743524 // xar z4.s, z4.s, z9.s, #12
+	VADD V21.S4, V0.S4, V0.S4
+	VADD V16.S4, V1.S4, V1.S4
+	VADD V31.S4, V2.S4, V2.S4
+	VADD V17.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0478340f // xar z15.s, z15.s, z0.s, #8
+	WORD $0x0478342c // xar z12.s, z12.s, z1.s, #8
+	WORD $0x0478344d // xar z13.s, z13.s, z2.s, #8
+	WORD $0x0478346e // xar z14.s, z14.s, z3.s, #8
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04793545 // xar z5.s, z5.s, z10.s, #7
+	WORD $0x04793566 // xar z6.s, z6.s, z11.s, #7
+	WORD $0x04793507 // xar z7.s, z7.s, z8.s, #7
+	WORD $0x04793524 // xar z4.s, z4.s, z9.s, #7
+	// round 4, columns
+	VADD V26.S4, V0.S4, V0.S4
+	VADD V28.S4, V1.S4, V1.S4
+	VADD V30.S4, V2.S4, V2.S4
+	VADD V29.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0470340c // xar z12.s, z12.s, z0.s, #16
+	WORD $0x0470342d // xar z13.s, z13.s, z1.s, #16
+	WORD $0x0470344e // xar z14.s, z14.s, z2.s, #16
+	WORD $0x0470346f // xar z15.s, z15.s, z3.s, #16
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04743504 // xar z4.s, z4.s, z8.s, #12
+	WORD $0x04743525 // xar z5.s, z5.s, z9.s, #12
+	WORD $0x04743546 // xar z6.s, z6.s, z10.s, #12
+	WORD $0x04743567 // xar z7.s, z7.s, z11.s, #12
+	VADD V23.S4, V0.S4, V0.S4
+	VADD V25.S4, V1.S4, V1.S4
+	VADD V19.S4, V2.S4, V2.S4
+	VADD V31.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0478340c // xar z12.s, z12.s, z0.s, #8
+	WORD $0x0478342d // xar z13.s, z13.s, z1.s, #8
+	WORD $0x0478344e // xar z14.s, z14.s, z2.s, #8
+	WORD $0x0478346f // xar z15.s, z15.s, z3.s, #8
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04793504 // xar z4.s, z4.s, z8.s, #7
+	WORD $0x04793525 // xar z5.s, z5.s, z9.s, #7
+	WORD $0x04793546 // xar z6.s, z6.s, z10.s, #7
+	WORD $0x04793567 // xar z7.s, z7.s, z11.s, #7
+	// round 4, diagonals
+	VADD V20.S4, V0.S4, V0.S4
+	VADD V27.S4, V1.S4, V1.S4
+	VADD V21.S4, V2.S4, V2.S4
+	VADD V17.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0470340f // xar z15.s, z15.s, z0.s, #16
+	WORD $0x0470342c // xar z12.s, z12.s, z1.s, #16
+	WORD $0x0470344d // xar z13.s, z13.s, z2.s, #16
+	WORD $0x0470346e // xar z14.s, z14.s, z3.s, #16
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04743545 // xar z5.s, z5.s, z10.s, #12
+	WORD $0x04743566 // xar z6.s, z6.s, z11.s, #12
+	WORD $0x04743507 // xar z7.s, z7.s, z8.s, #12
+	WORD $0x04743524 // xar z4.s, z4.s, z9.s, #12
+	VADD V16.S4, V0.S4, V0.S4
+	VADD V18.S4, V1.S4, V1.S4
+	VADD V24.S4, V2.S4, V2.S4
+	VADD V22.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0478340f // xar z15.s, z15.s, z0.s, #8
+	WORD $0x0478342c // xar z12.s, z12.s, z1.s, #8
+	WORD $0x0478344d // xar z13.s, z13.s, z2.s, #8
+	WORD $0x0478346e // xar z14.s, z14.s, z3.s, #8
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04793545 // xar z5.s, z5.s, z10.s, #7
+	WORD $0x04793566 // xar z6.s, z6.s, z11.s, #7
+	WORD $0x04793507 // xar z7.s, z7.s, z8.s, #7
+	WORD $0x04793524 // xar z4.s, z4.s, z9.s, #7
+	// round 5, columns
+	VADD V28.S4, V0.S4, V0.S4
+	VADD V25.S4, V1.S4, V1.S4
+	VADD V31.S4, V2.S4, V2.S4
+	VADD V30.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0470340c // xar z12.s, z12.s, z0.s, #16
+	WORD $0x0470342d // xar z13.s, z13.s, z1.s, #16
+	WORD $0x0470344e // xar z14.s, z14.s, z2.s, #16
+	WORD $0x0470346f // xar z15.s, z15.s, z3.s, #16
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04743504 // xar z4.s, z4.s, z8.s, #12
+	WORD $0x04743525 // xar z5.s, z5.s, z9.s, #12
+	WORD $0x04743546 // xar z6.s, z6.s, z10.s, #12
+	WORD $0x04743567 // xar z7.s, z7.s, z11.s, #12
+	VADD V29.S4, V0.S4, V0.S4
+	VADD V27.S4, V1.S4, V1.S4
+	VADD V26.S4, V2.S4, V2.S4
+	VADD V24.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0478340c // xar z12.s, z12.s, z0.s, #8
+	WORD $0x0478342d // xar z13.s, z13.s, z1.s, #8
+	WORD $0x0478344e // xar z14.s, z14.s, z2.s, #8
+	WORD $0x0478346f // xar z15.s, z15.s, z3.s, #8
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04793504 // xar z4.s, z4.s, z8.s, #7
+	WORD $0x04793525 // xar z5.s, z5.s, z9.s, #7
+	WORD $0x04793546 // xar z6.s, z6.s, z10.s, #7
+	WORD $0x04793567 // xar z7.s, z7.s, z11.s, #7
+	// round 5, diagonals
+	VADD V23.S4, V0.S4, V0.S4
+	VADD V21.S4, V1.S4, V1.S4
+	VADD V16.S4, V2.S4, V2.S4
+	VADD V22.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0470340f // xar z15.s, z15.s, z0.s, #16
+	WORD $0x0470342c // xar z12.s, z12.s, z1.s, #16
+	WORD $0x0470344d // xar z13.s, z13.s, z2.s, #16
+	WORD $0x0470346e // xar z14.s, z14.s, z3.s, #16
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04743545 // xar z5.s, z5.s, z10.s, #12
+	WORD $0x04743566 // xar z6.s, z6.s, z11.s, #12
+	WORD $0x04743507 // xar z7.s, z7.s, z8.s, #12
+	WORD $0x04743524 // xar z4.s, z4.s, z9.s, #12
+	VADD V18.S4, V0.S4, V0.S4
+	VADD V19.S4, V1.S4, V1.S4
+	VADD V17.S4, V2.S4, V2.S4
+	VADD V20.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0478340f // xar z15.s, z15.s, z0.s, #8
+	WORD $0x0478342c // xar z12.s, z12.s, z1.s, #8
+	WORD $0x0478344d // xar z13.s, z13.s, z2.s, #8
+	WORD $0x0478346e // xar z14.s, z14.s, z3.s, #8
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04793545 // xar z5.s, z5.s, z10.s, #7
+	WORD $0x04793566 // xar z6.s, z6.s, z11.s, #7
+	WORD $0x04793507 // xar z7.s, z7.s, z8.s, #7
+	WORD $0x04793524 // xar z4.s, z4.s, z9.s, #7
+	// round 6, columns
+	VADD V25.S4, V0.S4, V0.S4
+	VADD V27.S4, V1.S4, V1.S4
+	VADD V24.S4, V2.S4, V2.S4
+	VADD V31.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0470340c // xar z12.s, z12.s, z0.s, #16
+	WORD $0x0470342d // xar z13.s, z13.s, z1.s, #16
+	WORD $0x0470344e // xar z14.s, z14.s, z2.s, #16
+	WORD $0x0470346f // xar z15.s, z15.s, z3.s, #16
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04743504 // xar z4.s, z4.s, z8.s, #12
+	WORD $0x04743525 // xar z5.s, z5.s, z9.s, #12
+	WORD $0x04743546 // xar z6.s, z6.s, z10.s, #12
+	WORD $0x04743567 // xar z7.s, z7.s, z11.s, #12
+	VADD V30.S4, V0.S4, V0.S4
+	VADD V21.S4, V1.S4, V1.S4
+	VADD V28.S4, V2.S4, V2.S4
+	VADD V17.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0478340c // xar z12.s, z12.s, z0.s, #8
+	WORD $0x0478342d // xar z13.s, z13.s, z1.s, #8
+	WORD $0x0478344e // xar z14.s, z14.s, z2.s, #8
+	WORD $0x0478346f // xar z15.s, z15.s, z3.s, #8
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04793504 // xar z4.s, z4.s, z8.s, #7
+	WORD $0x04793525 // xar z5.s, z5.s, z9.s, #7
+	WORD $0x04793546 // xar z6.s, z6.s, z10.s, #7
+	WORD $0x04793567 // xar z7.s, z7.s, z11.s, #7
+	// round 6, diagonals
+	VADD V29.S4, V0.S4, V0.S4
+	VADD V16.S4, V1.S4, V1.S4
+	VADD V18.S4, V2.S4, V2.S4
+	VADD V20.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0470340f // xar z15.s, z15.s, z0.s, #16
+	WORD $0x0470342c // xar z12.s, z12.s, z1.s, #16
+	WORD $0x0470344d // xar z13.s, z13.s, z2.s, #16
+	WORD $0x0470346e // xar z14.s, z14.s, z3.s, #16
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04743545 // xar z5.s, z5.s, z10.s, #12
+	WORD $0x04743566 // xar z6.s, z6.s, z11.s, #12
+	WORD $0x04743507 // xar z7.s, z7.s, z8.s, #12
+	WORD $0x04743524 // xar z4.s, z4.s, z9.s, #12
+	VADD V19.S4, V0.S4, V0.S4
+	VADD V26.S4, V1.S4, V1.S4
+	VADD V22.S4, V2.S4, V2.S4
+	VADD V23.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0478340f // xar z15.s, z15.s, z0.s, #8
+	WORD $0x0478342c // xar z12.s, z12.s, z1.s, #8
+	WORD $0x0478344d // xar z13.s, z13.s, z2.s, #8
+	WORD $0x0478346e // xar z14.s, z14.s, z3.s, #8
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04793545 // xar z5.s, z5.s, z10.s, #7
+	WORD $0x04793566 // xar z6.s, z6.s, z11.s, #7
+	WORD $0x04793507 // xar z7.s, z7.s, z8.s, #7
+	WORD $0x04793524 // xar z4.s, z4.s, z9.s, #7
+	// round 7, columns
+	VADD V27.S4, V0.S4, V0.S4
+	VADD V21.S4, V1.S4, V1.S4
+	VADD V17.S4, V2.S4, V2.S4
+	VADD V24.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0470340c // xar z12.s, z12.s, z0.s, #16
+	WORD $0x0470342d // xar z13.s, z13.s, z1.s, #16
+	WORD $0x0470344e // xar z14.s, z14.s, z2.s, #16
+	WORD $0x0470346f // xar z15.s, z15.s, z3.s, #16
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04743504 // xar z4.s, z4.s, z8.s, #12
+	WORD $0x04743525 // xar z5.s, z5.s, z9.s, #12
+	WORD $0x04743546 // xar z6.s, z6.s, z10.s, #12
+	WORD $0x04743567 // xar z7.s, z7.s, z11.s, #12
+	VADD V31.S4, V0.S4, V0.S4
+	VADD V16.S4, V1.S4, V1.S4
+	VADD V25.S4, V2.S4, V2.S4
+	VADD V22.S4, V3.S4, V3.S4
+	VADD V4.S4, V0.S4, V0.S4
+	VADD V5.S4, V1.S4, V1.S4
+	VADD V6.S4, V2.S4, V2.S4
+	VADD V7.S4, V3.S4, V3.S4
+	WORD $0x0478340c // xar z12.s, z12.s, z0.s, #8
+	WORD $0x0478342d // xar z13.s, z13.s, z1.s, #8
+	WORD $0x0478344e // xar z14.s, z14.s, z2.s, #8
+	WORD $0x0478346f // xar z15.s, z15.s, z3.s, #8
+	VADD V12.S4, V8.S4, V8.S4
+	VADD V13.S4, V9.S4, V9.S4
+	VADD V14.S4, V10.S4, V10.S4
+	VADD V15.S4, V11.S4, V11.S4
+	WORD $0x04793504 // xar z4.s, z4.s, z8.s, #7
+	WORD $0x04793525 // xar z5.s, z5.s, z9.s, #7
+	WORD $0x04793546 // xar z6.s, z6.s, z10.s, #7
+	WORD $0x04793567 // xar z7.s, z7.s, z11.s, #7
+	// round 7, diagonals
+	VADD V30.S4, V0.S4, V0.S4
+	VADD V18.S4, V1.S4, V1.S4
+	VADD V19.S4, V2.S4, V2.S4
+	VADD V23.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0470340f // xar z15.s, z15.s, z0.s, #16
+	WORD $0x0470342c // xar z12.s, z12.s, z1.s, #16
+	WORD $0x0470344d // xar z13.s, z13.s, z2.s, #16
+	WORD $0x0470346e // xar z14.s, z14.s, z3.s, #16
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04743545 // xar z5.s, z5.s, z10.s, #12
+	WORD $0x04743566 // xar z6.s, z6.s, z11.s, #12
+	WORD $0x04743507 // xar z7.s, z7.s, z8.s, #12
+	WORD $0x04743524 // xar z4.s, z4.s, z9.s, #12
+	VADD V26.S4, V0.S4, V0.S4
+	VADD V28.S4, V1.S4, V1.S4
+	VADD V20.S4, V2.S4, V2.S4
+	VADD V29.S4, V3.S4, V3.S4
+	VADD V5.S4, V0.S4, V0.S4
+	VADD V6.S4, V1.S4, V1.S4
+	VADD V7.S4, V2.S4, V2.S4
+	VADD V4.S4, V3.S4, V3.S4
+	WORD $0x0478340f // xar z15.s, z15.s, z0.s, #8
+	WORD $0x0478342c // xar z12.s, z12.s, z1.s, #8
+	WORD $0x0478344d // xar z13.s, z13.s, z2.s, #8
+	WORD $0x0478346e // xar z14.s, z14.s, z3.s, #8
+	VADD V15.S4, V10.S4, V10.S4
+	VADD V12.S4, V11.S4, V11.S4
+	VADD V13.S4, V8.S4, V8.S4
+	VADD V14.S4, V9.S4, V9.S4
+	WORD $0x04793545 // xar z5.s, z5.s, z10.s, #7
+	WORD $0x04793566 // xar z6.s, z6.s, z11.s, #7
+	WORD $0x04793507 // xar z7.s, z7.s, z8.s, #7
+	WORD $0x04793524 // xar z4.s, z4.s, z9.s, #7
+	RET
+
+// func hash4SVE2(out *[4][8]uint32, p0, p1, p2, p3 *byte, blocks int, key *[8]uint32, counter, inc uint64, flags, flagsStart, flagsEnd uint32)
+TEXT ·hash4SVE2(SB), NOSPLIT, $136-84
+	MOVD out+0(FP), R0
+	MOVD p0+8(FP), R1
+	MOVD p1+16(FP), R2
+	MOVD p2+24(FP), R3
+	MOVD p3+32(FP), R4
+	MOVD blocks+40(FP), R5
+	MOVD key+48(FP), R6
+	MOVD counter+56(FP), R7
+	MOVD inc+64(FP), R8
+	MOVWU flags+72(FP), R9
+	MOVWU flagsStart+76(FP), R10
+	MOVWU flagsEnd+80(FP), R11
+	MOVD $blake3consts<>(SB), R12
+	// V0-V7 carry the chaining values from block to block
+	VLD1R.P 4(R6), [V0.S4]
+	VLD1R.P 4(R6), [V1.S4]
+	VLD1R.P 4(R6), [V2.S4]
+	VLD1R.P 4(R6), [V3.S4]
+	VLD1R.P 4(R6), [V4.S4]
+	VLD1R.P 4(R6), [V5.S4]
+	VLD1R.P 4(R6), [V6.S4]
+	VLD1R.P 4(R6), [V7.S4]
+	// lane i hashes with counter + i*inc
+	VMOV R7, V8.D[0]
+	ADD R8, R7, R7
+	VMOV R7, V8.D[1]
+	ADD R8, R7, R7
+	VMOV R7, V9.D[0]
+	ADD R8, R7, R7
+	VMOV R7, V9.D[1]
+	VUZP1 V9.S4, V8.S4, V10.S4
+	VUZP2 V9.S4, V8.S4, V11.S4
+	FMOVQ F10, 96(RSP)
+	FMOVQ F11, 112(RSP)
+	// R13 holds the flags of the next block
+	ORR R10, R9, R13
+loop:
+	CMP $1, R5
+	BNE load
+	ORR R11, R13, R13
+load:
+	// load a block from each input and transpose it into message words;
+	// V8-V15 are free until the state is set up below
+	FMOVQ 0(R1), F8
+	FMOVQ 0(R2), F9
+	FMOVQ 0(R3), F10
+	FMOVQ 0(R4), F11
+	VZIP1 V9.S4, V8.S4, V12.S4
+	VZIP2 V9.S4, V8.S4, V13.S4
+	VZIP1 V11.S4, V10.S4, V14.S4
+	VZIP2 V11.S4, V10.S4, V15.S4
+	VZIP1 V14.D2, V12.D2, V16.D2
+	VZIP2 V14.D2, V12.D2, V17.D2
+	VZIP1 V15.D2, V13.D2, V18.D2
+	VZIP2 V15.D2, V13.D2, V19.D2
+	FMOVQ 16(R1), F8
+	FMOVQ 16(R2), F9
+	FMOVQ 16(R3), F10
+	FMOVQ 16(R4), F11
+	VZIP1 V9.S4, V8.S4, V12.S4
+	VZIP2 V9.S4, V8.S4, V13.S4
+	VZIP1 V11.S4, V10.S4, V14.S4
+	VZIP2 V11.S4, V10.S4, V15.S4
+	VZIP1 V14.D2, V12.D2, V20.D2
+	VZIP2 V14.D2, V12.D2, V21.D2
+	VZIP1 V15.D2, V13.D2, V22.D2
+	VZIP2 V15.D2, V13.D2, V23.D2
+	FMOVQ 32(R1), F8
+	FMOVQ 32(R2), F9
+	FMOVQ 32(R3), F10
+	FMOVQ 32(R4), F11
+	VZIP1 V9.S4, V8.S4, V12.S4
+	VZIP2 V9.S4, V8.S4, V13.S4
+	VZIP1 V11.S4, V10.S4, V14.S4
+	VZIP2 V11.S4, V10.S4, V15.S4
+	VZIP1 V14.D2, V12.D2, V24.D2
+	VZIP2 V14.D2, V12.D2, V25.D2
+	VZIP1 V15.D2, V13.D2, V26.D2
+	VZIP2 V15.D2, V13.D2, V27.D2
+	FMOVQ 48(R1), F8
+	FMOVQ 48(R2), F9
+	FMOVQ 48(R3), F10
+	FMOVQ 48(R4), F11
+	VZIP1 V9.S4, V8.S4, V12.S4
+	VZIP2 V9.S4, V8.S4, V13.S4
+	VZIP1 V11.S4, V10.S4, V14.S4
+	VZIP2 V11.S4, V10.S4, V15.S4
+	VZIP1 V14.D2, V12.D2, V28.D2
+	VZIP2 V14.D2, V12.D2, V29.D2
+	VZIP1 V15.D2, V13.D2, V30.D2
+	VZIP2 V15.D2, V13.D2, V31.D2
+	ADD $64, R1, R1
+	ADD $64, R2, R2
+	ADD $64, R3, R3
+	ADD $64, R4, R4
+	// rows 2 and 3 of the state: IV, counter, block length, flags
+	VLD1 (R12), [V8.B16, V9.B16, V10.B16, V11.B16]
+	FMOVQ 96(RSP), F12
+	FMOVQ 112(RSP), F13
+	FMOVQ 64(R12), F14
+	VDUP R13, V15.S4
+	BL blake3rounds4SVE2<>(SB)
+	// the next chaining value is the XOR of the two halves of the state
+	VEOR V8.B16, V0.B16, V0.B16
+	VEOR V9.B16, V1.B16, V1.B16
+	VEOR V10.B16, V2.B16, V2.B16
+	VEOR V11.B16, V3.B16, V3.B16
+	VEOR V12.B16, V4.B16, V4.B16
+	VEOR V13.B16, V5.B16, V5.B16
+	VEOR V14.B16, V6.B16, V6.B16
+	VEOR V15.B16, V7.B16, V7.B16
+	MOVD R9, R13
+	SUBS $1, R5, R5
+	BNE loop
+	// transpose the chaining values back and store one per lane
+	VZIP1 V1.S4, V0.S4, V8.S4
+	VZIP2 V1.S4, V0.S4, V9.S4
+	VZIP1 V3.S4, V2.S4, V10.S4
+	VZIP2 V3.S4, V2.S4, V11.S4
+	VZIP1 V10.D2, V8.D2, V12.D2
+	VZIP2 V10.D2, V8.D2, V13.D2
+	VZIP1 V11.D2, V9.D2, V14.D2
+	VZIP2 V11.D2, V9.D2, V15.D2
+	FMOVQ F12, 0(R0)
+	FMOVQ F13, 32(R0)
+	FMOVQ F14, 64(R0)
+	FMOVQ F15, 96(R0)
+	VZIP1 V5.S4, V4.S4, V8.S4
+	VZIP2 V5.S4, V4.S4, V9.S4
+	VZIP1 V7.S4, V6.S4, V10.S4
+	VZIP2 V7.S4, V6.S4, V11.S4
+	VZIP1 V10.D2, V8.D2, V12.D2
+	VZIP2 V10.D2, V8.D2, V13.D2
+	VZIP1 V11.D2, V9.D2, V14.D2
+	VZIP2 V11.D2, V9.D2, V15.D2
+	FMOVQ F12, 16(R0)
+	FMOVQ F13, 48(R0)
+	FMOVQ F14, 80(R0)
+	FMOVQ F15, 112(R0)
+	RET
+
+// func xof4SVE2(out *[256]byte, n *Node)
+TEXT ·xof4SVE2(SB), NOSPLIT, $136-16
+	MOVD out+0(FP), R0
+	MOVD n+8(FP), R1
+	MOVD $blake3consts<>(SB), R12
+	// every lane compresses the same block
+	ADD $32, R1, R2
+	VLD1R.P 4(R2), [V16.S4]
+	VLD1R.P 4(R2), [V17.S4]
+	VLD1R.P 4(R2), [V18.S4]
+	VLD1R.P 4(R2), [V19.S4]
+	VLD1R.P 4(R2), [V20.S4]
+	VLD1R.P 4(R2), [V21.S4]
+	VLD1R.P 4(R2), [V22.S4]
+	VLD1R.P 4(R2), [V23.S4]
+	VLD1R.P 4(R2), [V24.S4]
+	VLD1R.P 4(R2), [V25.S4]
+	VLD1R.P 4(R2), [V26.S4]
+	VLD1R.P 4(R2), [V27.S4]
+	VLD1R.P 4(R2), [V28.S4]
+	VLD1R.P 4(R2), [V29.S4]
+	VLD1R.P 4(R2), [V30.S4]
+	VLD1R.P 4(R2), [V31.S4]
+	// lane i uses counter + i; R2 points at the counter
+	MOVD (R2), R3
+	VDUP R3, V8.D2
+	FMOVQ 96(R12), F9
+	FMOVQ 112(R12), F10
+	VADD V9.D2, V8.D2, V9.D2
+	VADD V10.D2, V8.D2, V10.D2
+	VUZP1 V10.S4, V9.S4, V12.S4
+	VUZP2 V10.S4, V9.S4, V13.S4
+	// block length and flags follow the counter
+	ADD $8, R2, R2
+	VLD1R.P 4(R2), [V14.S4]
+	VLD1R (R2), [V15.S4]
+	MOVD R1, R2
+	VLD1R.P 4(R2), [V0.S4]
+	VLD1R.P 4(R2), [V1.S4]
+	VLD1R.P 4(R2), [V2.S4]
+	VLD1R.P 4(R2), [V3.S4]
+	VLD1R.P 4(R2), [V4.S4]
+	VLD1R.P 4(R2), [V5.S4]
+	VLD1R.P 4(R2), [V6.S4]
+	VLD1R.P 4(R2), [V7.S4]
+	VLD1 (R12), [V8.B16, V9.B16, V10.B16, V11.B16]
+	BL blake3rounds4SVE2<>(SB)
+	// output words 0-7 are the XOR of the two halves of the state;
+	// words 8-15 are the second half XORed with the input chaining value
+	VEOR V8.B16, V0.B16, V0.B16
+	VEOR V9.B16, V1.B16, V1.B16
+	VEOR V10.B16, V2.B16, V2.B16
+	VEOR V11.B16, V3.B16, V3.B16
+	VEOR V12.B16, V4.B16, V4.B16
+	VEOR V13.B16, V5.B16, V5.B16
+	VEOR V14.B16, V6.B16, V6.B16
+	VEOR V15.B16, V7.B16, V7.B16
+	MOVD R1, R2
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V8.B16, V8.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V9.B16, V9.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V10.B16, V10.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V11.B16, V11.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V12.B16, V12.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V13.B16, V13.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V14.B16, V14.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V15.B16, V15.B16
+	// transpose the outputs back and store 64 bytes per lane
+	VZIP1 V1.S4, V0.S4, V16.S4
+	VZIP2 V1.S4, V0.S4, V17.S4
+	VZIP1 V3.S4, V2.S4, V18.S4
+	VZIP2 V3.S4, V2.S4, V19.S4
+	VZIP1 V18.D2, V16.D2, V20.D2
+	VZIP2 V18.D2, V16.D2, V21.D2
+	VZIP1 V19.D2, V17.D2, V22.D2
+	VZIP2 V19.D2, V17.D2, V23.D2
+	FMOVQ F20, 0(R0)
+	FMOVQ F21, 64(R0)
+	FMOVQ F22, 128(R0)
+	FMOVQ F23, 192(R0)
+	VZIP1 V5.S4, V4.S4, V16.S4
+	VZIP2 V5.S4, V4.S4, V17.S4
+	VZIP1 V7.S4, V6.S4, V18.S4
+	VZIP2 V7.S4, V6.S4, V19.S4
+	VZIP1 V18.D2, V16.D2, V20.D2
+	VZIP2 V18.D2, V16.D2, V21.D2
+	VZIP1 V19.D2, V17.D2, V22.D2
+	VZIP2 V19.D2, V17.D2, V23.D2
+	FMOVQ F20, 16(R0)
+	FMOVQ F21, 80(R0)
+	FMOVQ F22, 144(R0)
+	FMOVQ F23, 208(R0)
+	VZIP1 V9.S4, V8.S4, V16.S4
+	VZIP2 V9.S4, V8.S4, V17.S4
+	VZIP1 V11.S4, V10.S4, V18.S4
+	VZIP2 V11.S4, V10.S4, V19.S4
+	VZIP1 V18.D2, V16.D2, V20.D2
+	VZIP2 V18.D2, V16.D2, V21.D2
+	VZIP1 V19.D2, V17.D2, V22.D2
+	VZIP2 V19.D2, V17.D2, V23.D2
+	FMOVQ F20, 32(R0)
+	FMOVQ F21, 96(R0)
+	FMOVQ F22, 160(R0)
+	FMOVQ F23, 224(R0)
+	VZIP1 V13.S4, V12.S4, V16.S4
+	VZIP2 V13.S4, V12.S4, V17.S4
+	VZIP1 V15.S4, V14.S4, V18.S4
+	VZIP2 V15.S4, V14.S4, V19.S4
+	VZIP1 V18.D2, V16.D2, V20.D2
+	VZIP2 V18.D2, V16.D2, V21.D2
+	VZIP1 V19.D2, V17.D2, V22.D2
+	VZIP2 V19.D2, V17.D2, V23.D2
+	FMOVQ F20, 48(R0)
+	FMOVQ F21, 112(R0)
+	FMOVQ F22, 176(R0)
+	FMOVQ F23, 240(R0)
+	RET
