@@ -36,6 +36,12 @@ var haveNEON = true
 //go:noescape
 func hash4NEON(out *[4][8]uint32, p0, p1, p2, p3 *byte, blocks int, key *[8]uint32, counter, inc uint64, flags, flagsStart, flagsEnd uint32)
 
+// xof4NEON compresses n with the counters n.Counter through n.Counter+3 and
+// stores the four 64-byte outputs in out.
+//
+//go:noescape
+func xof4NEON(out *[4 * BlockSize]byte, n *Node)
+
 // minLanes is the smallest number of inputs worth a four-lane call. A call
 // costs about as much as 1.4 scalar compressions per block on the cores this
 // was measured on (Neoverse N2, Apple M2), so it pays from two inputs up.
@@ -54,7 +60,14 @@ func CompressChunk(chunk []byte, key *[8]uint32, counter uint64, flags uint32) N
 
 // CompressBlocks compresses MaxSIMD copies of n with successive counters.
 func CompressBlocks(out *[MaxSIMD * BlockSize]byte, n Node) {
-	compressBlocksGeneric(out, n)
+	if !haveNEON {
+		compressBlocksGeneric(out, n)
+		return
+	}
+	for i := 0; i < MaxSIMD; i += 4 {
+		xof4NEON((*[4 * BlockSize]byte)(out[i*BlockSize:]), &n)
+		n.Counter += 4
+	}
 }
 
 // compressChunks stores the chaining values of len(cvs) full chunks in cvs.

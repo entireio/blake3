@@ -42,10 +42,12 @@ var msgPermutation = [16]int{2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 
 
 // Offsets into the constant table.
 const (
-	constIV       = 0  // four IV words, each replicated across the lanes
-	constBlockLen = 64 // 64 in every lane
-	constRot8     = 80 // byte shuffle that rotates each word right by 8
-	constSize     = 96
+	constIV       = 0   // four IV words, each replicated across the lanes
+	constBlockLen = 64  // 64 in every lane
+	constRot8     = 80  // byte shuffle that rotates each word right by 8
+	constLanes01  = 96  // 64-bit lane indices 0, 1
+	constLanes23  = 112 // 64-bit lane indices 2, 3
+	constSize     = 128
 )
 
 // Offsets from RSP into the kernels' frames. 0(RSP) holds the saved link
@@ -138,8 +140,8 @@ func (g *gen) label(name string) {
 }
 
 func (g *gen) consts() {
-	g.raw("// IV words replicated across the lanes, the block length, and the byte")
-	g.raw("// shuffle that rotates each word right by 8.")
+	g.raw("// IV words replicated across the lanes, the block length, the byte shuffle")
+	g.raw("// that rotates each word right by 8, and the 64-bit lane indices.")
 	data := func(off int, words ...uint32) {
 		for i, w := range words {
 			g.raw("DATA blake3consts<>+%d(SB)/4, $0x%08x", off+4*i, w)
@@ -150,6 +152,8 @@ func (g *gen) consts() {
 	}
 	data(constBlockLen, 64, 64, 64, 64)
 	data(constRot8, 0x00030201, 0x04070605, 0x080b0a09, 0x0c0f0e0d)
+	data(constLanes01, 0, 0, 1, 0)
+	data(constLanes23, 2, 0, 3, 0)
 	g.raw("GLOBL blake3consts<>(SB), RODATA|NOPTR, $%d", constSize)
 }
 
@@ -353,6 +357,70 @@ func (g *gen) hash4(v variant) {
 	g.ins("RET")
 }
 
+// xof4 emits the kernel behind CompressBlocks: it compresses one node with
+// four successive counters and stores all sixteen output words of each.
+func (g *gen) xof4(v variant) {
+	g.section = "xof" + v.name
+	g.raw("")
+	g.raw("// func xof4%s(out *[256]byte, n *Node)", v.name)
+	g.raw("TEXT ·xof4%s(SB), NOSPLIT, $%d-16", v.name, frameSize)
+	g.ins("MOVD out+0(FP), R0")
+	g.ins("MOVD n+8(FP), R1")
+	g.ins("MOVD $blake3consts<>(SB), R12")
+
+	g.comment("every lane compresses the same block")
+	g.ins("ADD $32, R1, R2")
+	for i := 0; i < 16; i++ {
+		if r, ok := v.msgReg(i); ok {
+			g.ins("VLD1R.P 4(R2), [V%d.S4]", r)
+		} else {
+			g.ins("VLD1R.P 4(R2), [V8.S4]")
+			g.ins("FMOVQ F8, %d(RSP)", v.msgSlot(i))
+		}
+	}
+
+	g.comment("lane i uses counter + i; R2 points at the counter")
+	g.ins("MOVD (R2), R3")
+	g.ins("VDUP R3, V8.D2")
+	g.ins("FMOVQ %d(R12), F9", constLanes01)
+	g.ins("FMOVQ %d(R12), F10", constLanes23)
+	g.ins("VADD V9.D2, V8.D2, V9.D2")
+	g.ins("VADD V10.D2, V8.D2, V10.D2")
+	g.ins("VUZP1 V10.S4, V9.S4, V12.S4")
+	g.ins("VUZP2 V10.S4, V9.S4, V13.S4")
+	g.comment("block length and flags follow the counter")
+	g.ins("ADD $8, R2, R2")
+	g.ins("VLD1R.P 4(R2), [V14.S4]")
+	g.ins("VLD1R (R2), [V15.S4]")
+	g.ins("MOVD R1, R2")
+	for i := 0; i < 8; i++ {
+		g.ins("VLD1R.P 4(R2), [V%d.S4]", i)
+	}
+	g.ins("VLD1 (R12), [V8.B16, V9.B16, V10.B16, V11.B16]")
+	g.ins("FMOVQ %d(R12), F%d", constRot8, rot8Table)
+	g.ins("BL blake3rounds4%s<>(SB)", v.name)
+
+	g.comment("output words 0-7 are the XOR of the two halves of the state;")
+	g.comment("words 8-15 are the second half XORed with the input chaining value")
+	for i := 0; i < 8; i++ {
+		g.ins("VEOR V%d.B16, V%d.B16, V%d.B16", 8+i, i, i)
+	}
+	g.ins("MOVD R1, R2")
+	for i := 0; i < 8; i++ {
+		g.ins("VLD1R.P 4(R2), [V16.S4]")
+		g.ins("VEOR V16.B16, V%d.B16, V%d.B16", 8+i, 8+i)
+	}
+	g.comment("transpose the outputs back and store 64 bytes per lane")
+	for group := 0; group < 4; group++ {
+		src := [4]int{4 * group, 4*group + 1, 4*group + 2, 4*group + 3}
+		g.transpose(src, [4]int{16, 17, 18, 19}, [4]int{20, 21, 22, 23})
+		for lane := 0; lane < 4; lane++ {
+			g.ins("FMOVQ F%d, %d(R0)", 20+lane, 64*lane+16*group)
+		}
+	}
+	g.ins("RET")
+}
+
 func main() {
 	out := flag.String("out", "compress_arm64.s", "file to write")
 	stats := flag.Bool("stats", false, "print per-block instruction counts instead of writing the file")
@@ -367,6 +435,7 @@ func main() {
 	for _, v := range []variant{neon} {
 		g.rounds(v)
 		g.hash4(v)
+		g.xof4(v)
 	}
 
 	if *stats {

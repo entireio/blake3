@@ -2,8 +2,8 @@
 
 #include "textflag.h"
 
-// IV words replicated across the lanes, the block length, and the byte
-// shuffle that rotates each word right by 8.
+// IV words replicated across the lanes, the block length, the byte shuffle
+// that rotates each word right by 8, and the 64-bit lane indices.
 DATA blake3consts<>+0(SB)/4, $0x6a09e667
 DATA blake3consts<>+4(SB)/4, $0x6a09e667
 DATA blake3consts<>+8(SB)/4, $0x6a09e667
@@ -28,7 +28,15 @@ DATA blake3consts<>+80(SB)/4, $0x00030201
 DATA blake3consts<>+84(SB)/4, $0x04070605
 DATA blake3consts<>+88(SB)/4, $0x080b0a09
 DATA blake3consts<>+92(SB)/4, $0x0c0f0e0d
-GLOBL blake3consts<>(SB), RODATA|NOPTR, $96
+DATA blake3consts<>+96(SB)/4, $0x00000000
+DATA blake3consts<>+100(SB)/4, $0x00000000
+DATA blake3consts<>+104(SB)/4, $0x00000001
+DATA blake3consts<>+108(SB)/4, $0x00000000
+DATA blake3consts<>+112(SB)/4, $0x00000002
+DATA blake3consts<>+116(SB)/4, $0x00000000
+DATA blake3consts<>+120(SB)/4, $0x00000003
+DATA blake3consts<>+124(SB)/4, $0x00000000
+GLOBL blake3consts<>(SB), RODATA|NOPTR, $128
 
 // blake3rounds4NEON runs the seven rounds of four compressions whose state
 // is in V0-V15. See gen_arm64.go for where it expects the message words.
@@ -1127,4 +1135,135 @@ load:
 	FMOVQ F13, 48(R0)
 	FMOVQ F14, 80(R0)
 	FMOVQ F15, 112(R0)
+	RET
+
+// func xof4NEON(out *[256]byte, n *Node)
+TEXT ·xof4NEON(SB), NOSPLIT, $136-16
+	MOVD out+0(FP), R0
+	MOVD n+8(FP), R1
+	MOVD $blake3consts<>(SB), R12
+	// every lane compresses the same block
+	ADD $32, R1, R2
+	VLD1R.P 4(R2), [V16.S4]
+	VLD1R.P 4(R2), [V17.S4]
+	VLD1R.P 4(R2), [V18.S4]
+	VLD1R.P 4(R2), [V19.S4]
+	VLD1R.P 4(R2), [V20.S4]
+	VLD1R.P 4(R2), [V21.S4]
+	VLD1R.P 4(R2), [V22.S4]
+	VLD1R.P 4(R2), [V23.S4]
+	VLD1R.P 4(R2), [V24.S4]
+	VLD1R.P 4(R2), [V25.S4]
+	VLD1R.P 4(R2), [V26.S4]
+	VLD1R.P 4(R2), [V8.S4]
+	FMOVQ F8, 16(RSP)
+	VLD1R.P 4(R2), [V8.S4]
+	FMOVQ F8, 32(RSP)
+	VLD1R.P 4(R2), [V8.S4]
+	FMOVQ F8, 48(RSP)
+	VLD1R.P 4(R2), [V8.S4]
+	FMOVQ F8, 64(RSP)
+	VLD1R.P 4(R2), [V8.S4]
+	FMOVQ F8, 80(RSP)
+	// lane i uses counter + i; R2 points at the counter
+	MOVD (R2), R3
+	VDUP R3, V8.D2
+	FMOVQ 96(R12), F9
+	FMOVQ 112(R12), F10
+	VADD V9.D2, V8.D2, V9.D2
+	VADD V10.D2, V8.D2, V10.D2
+	VUZP1 V10.S4, V9.S4, V12.S4
+	VUZP2 V10.S4, V9.S4, V13.S4
+	// block length and flags follow the counter
+	ADD $8, R2, R2
+	VLD1R.P 4(R2), [V14.S4]
+	VLD1R (R2), [V15.S4]
+	MOVD R1, R2
+	VLD1R.P 4(R2), [V0.S4]
+	VLD1R.P 4(R2), [V1.S4]
+	VLD1R.P 4(R2), [V2.S4]
+	VLD1R.P 4(R2), [V3.S4]
+	VLD1R.P 4(R2), [V4.S4]
+	VLD1R.P 4(R2), [V5.S4]
+	VLD1R.P 4(R2), [V6.S4]
+	VLD1R.P 4(R2), [V7.S4]
+	VLD1 (R12), [V8.B16, V9.B16, V10.B16, V11.B16]
+	FMOVQ 80(R12), F27
+	BL blake3rounds4NEON<>(SB)
+	// output words 0-7 are the XOR of the two halves of the state;
+	// words 8-15 are the second half XORed with the input chaining value
+	VEOR V8.B16, V0.B16, V0.B16
+	VEOR V9.B16, V1.B16, V1.B16
+	VEOR V10.B16, V2.B16, V2.B16
+	VEOR V11.B16, V3.B16, V3.B16
+	VEOR V12.B16, V4.B16, V4.B16
+	VEOR V13.B16, V5.B16, V5.B16
+	VEOR V14.B16, V6.B16, V6.B16
+	VEOR V15.B16, V7.B16, V7.B16
+	MOVD R1, R2
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V8.B16, V8.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V9.B16, V9.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V10.B16, V10.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V11.B16, V11.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V12.B16, V12.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V13.B16, V13.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V14.B16, V14.B16
+	VLD1R.P 4(R2), [V16.S4]
+	VEOR V16.B16, V15.B16, V15.B16
+	// transpose the outputs back and store 64 bytes per lane
+	VZIP1 V1.S4, V0.S4, V16.S4
+	VZIP2 V1.S4, V0.S4, V17.S4
+	VZIP1 V3.S4, V2.S4, V18.S4
+	VZIP2 V3.S4, V2.S4, V19.S4
+	VZIP1 V18.D2, V16.D2, V20.D2
+	VZIP2 V18.D2, V16.D2, V21.D2
+	VZIP1 V19.D2, V17.D2, V22.D2
+	VZIP2 V19.D2, V17.D2, V23.D2
+	FMOVQ F20, 0(R0)
+	FMOVQ F21, 64(R0)
+	FMOVQ F22, 128(R0)
+	FMOVQ F23, 192(R0)
+	VZIP1 V5.S4, V4.S4, V16.S4
+	VZIP2 V5.S4, V4.S4, V17.S4
+	VZIP1 V7.S4, V6.S4, V18.S4
+	VZIP2 V7.S4, V6.S4, V19.S4
+	VZIP1 V18.D2, V16.D2, V20.D2
+	VZIP2 V18.D2, V16.D2, V21.D2
+	VZIP1 V19.D2, V17.D2, V22.D2
+	VZIP2 V19.D2, V17.D2, V23.D2
+	FMOVQ F20, 16(R0)
+	FMOVQ F21, 80(R0)
+	FMOVQ F22, 144(R0)
+	FMOVQ F23, 208(R0)
+	VZIP1 V9.S4, V8.S4, V16.S4
+	VZIP2 V9.S4, V8.S4, V17.S4
+	VZIP1 V11.S4, V10.S4, V18.S4
+	VZIP2 V11.S4, V10.S4, V19.S4
+	VZIP1 V18.D2, V16.D2, V20.D2
+	VZIP2 V18.D2, V16.D2, V21.D2
+	VZIP1 V19.D2, V17.D2, V22.D2
+	VZIP2 V19.D2, V17.D2, V23.D2
+	FMOVQ F20, 32(R0)
+	FMOVQ F21, 96(R0)
+	FMOVQ F22, 160(R0)
+	FMOVQ F23, 224(R0)
+	VZIP1 V13.S4, V12.S4, V16.S4
+	VZIP2 V13.S4, V12.S4, V17.S4
+	VZIP1 V15.S4, V14.S4, V18.S4
+	VZIP2 V15.S4, V14.S4, V19.S4
+	VZIP1 V18.D2, V16.D2, V20.D2
+	VZIP2 V18.D2, V16.D2, V21.D2
+	VZIP1 V19.D2, V17.D2, V22.D2
+	VZIP2 V19.D2, V17.D2, V23.D2
+	FMOVQ F20, 48(R0)
+	FMOVQ F21, 112(R0)
+	FMOVQ F22, 176(R0)
+	FMOVQ F23, 240(R0)
 	RET
