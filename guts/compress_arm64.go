@@ -92,7 +92,33 @@ func compressChunks(cvs [][8]uint32, buf []byte, key *[8]uint32, counter uint64,
 // compressParents stores the chaining value of the parent of cvs[2i] and
 // cvs[2i+1] in parents[i]. parents may alias the front of cvs.
 func compressParents(parents, cvs [][8]uint32, key *[8]uint32, flags uint32) {
-	compressParentsGeneric(parents, cvs, key, flags)
+	if !haveNEON {
+		compressParentsGeneric(parents, cvs, key, flags)
+		return
+	}
+	// A parent's block is its two children's chaining values, which are
+	// adjacent in cvs. The kernel loads every lane's block before it stores
+	// anything, so writing parents over the front of cvs is safe.
+	pair := func(i int) *byte { return (*byte)(unsafe.Pointer(&cvs[2*i])) }
+	for len(parents) >= 4 {
+		hash4NEON((*[4][8]uint32)(parents), pair(0), pair(1), pair(2), pair(3),
+			1, key, 0, 0, flags|FlagParent, 0, 0)
+		parents, cvs = parents[4:], cvs[8:]
+	}
+	if n := len(parents); n >= minLanes {
+		var out [4][8]uint32
+		lanes := [4]*byte{pair(0), pair(0), pair(0), pair(0)}
+		for i := 1; i < n; i++ {
+			lanes[i] = pair(i)
+		}
+		hash4NEON(&out, lanes[0], lanes[1], lanes[2], lanes[3],
+			1, key, 0, 0, flags|FlagParent, 0, 0)
+		copy(parents, out[:])
+		return
+	}
+	for i := range parents {
+		parents[i] = ChainingValue(ParentNode(cvs[2*i], cvs[2*i+1], key, flags))
+	}
 }
 
 // BytesToWords converts 64 little-endian bytes to 16 words.
