@@ -313,6 +313,11 @@ func (w *wide512) storeCVs(out Register) {
 	interleave4([4]Op(w.state[4:8]), [4]Op(t[4:8]), [4]Op(u[4:8]))
 
 	if w.lanes == 8 {
+		// The 256-bit form of VSHUFI32X4 reads one bit per source: bit 0
+		// picks the lane of the first source that becomes the low half, and
+		// bit 1 the lane of the second source that becomes the high half. So
+		// 0 joins the two low lanes (input r) and 3 the two high lanes
+		// (input 4+r).
 		for r := 0; r < 4; r++ {
 			VSHUFI32X4(Imm(0x0), u[4+r], u[r], t[r])
 			VSHUFI32X4(Imm(0x3), u[4+r], u[r], t[4+r])
