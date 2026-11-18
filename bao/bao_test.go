@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/entireio/blake3"
-	"github.com/entireio/blake3/bao"
+	"github.com/jmwoliver/blake3"
+	"github.com/jmwoliver/blake3/bao"
 )
 
 func toHex(data []byte) string { return hex.EncodeToString(data) }
