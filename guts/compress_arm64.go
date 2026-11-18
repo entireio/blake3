@@ -2,14 +2,12 @@
 
 package guts
 
-// The NEON kernels in compress_arm64.s were ported from
-// goforge.dev/blake3sum v1.0.0. Copyright 2026 brain-fuel, MIT license; see
-// LICENSE-GOFORGE and THIRD_PARTY_NOTICES.md in the module root.
-
 import (
 	"encoding/binary"
 	"unsafe"
 )
+
+//go:generate go run gen_arm64.go -out compress_arm64.s
 
 // compress_arm64.s loads Node fields by fixed byte offset. Fail the build if a
 // future Node edit changes that ABI without updating the assembly.
@@ -27,82 +25,132 @@ var (
 // portable implementation for differential checks.
 var haveNEON = true
 
-//go:noescape
-func compressNodeNEON(n *Node, out *[16]uint32)
-
-// compressChunksNEON compresses four full chunks in parallel.
+// hash4NEON and hash4SVE2 hash the same number of 64-byte blocks from each of
+// four inputs, and store the resulting chaining values in out. Every lane
+// starts from key; lane i uses counter+i*inc. Each block is compressed with
+// flags, plus flagsStart for the first block and flagsEnd for the last.
+//
+// The inputs are independent pointers so that a caller with fewer than four
+// inputs can aim the spare lanes at memory it knows to be readable.
 //
 //go:noescape
-func compressChunksNEON(cvs *[4][8]uint32, buf *[4 * ChunkSize]byte, key *[8]uint32, counter uint64, flags uint32)
+func hash4NEON(out *[4][8]uint32, p0, p1, p2, p3 *byte, blocks int, key *[8]uint32, counter, inc uint64, flags, flagsStart, flagsEnd uint32)
 
-// CompressBuffer compresses up to MaxSIMD chunks in parallel and returns their
-// root node.
-func CompressBuffer(buf *[MaxSIMD * ChunkSize]byte, buflen int, key *[8]uint32, counter uint64, flags uint32) Node {
-	if buflen <= ChunkSize {
-		return CompressChunk(buf[:buflen], key, counter, flags)
-	}
-	if !haveNEON {
-		return compressBufferGeneric(buf, buflen, key, counter, flags)
-	}
+//go:noescape
+func hash4SVE2(out *[4][8]uint32, p0, p1, p2, p3 *byte, blocks int, key *[8]uint32, counter, inc uint64, flags, flagsStart, flagsEnd uint32)
 
-	var cvs [MaxSIMD][8]uint32
-	numChunks := uint64(buflen / ChunkSize)
-	var group uint64
-	for ; (group+1)*4 <= numChunks; group++ {
-		compressChunksNEON(
-			(*[4][8]uint32)(unsafe.Pointer(&cvs[group*4])),
-			(*[4 * ChunkSize]byte)(unsafe.Pointer(&buf[group*4*ChunkSize])),
-			key,
-			counter+group*4,
-			flags,
-		)
+// xof4NEON and xof4SVE2 compress n with the counters n.Counter through
+// n.Counter+3 and store the four 64-byte outputs in out.
+//
+//go:noescape
+func xof4NEON(out *[4 * BlockSize]byte, n *Node)
+
+//go:noescape
+func xof4SVE2(out *[4 * BlockSize]byte, n *Node)
+
+func hash4(out *[4][8]uint32, p0, p1, p2, p3 *byte, blocks int, key *[8]uint32, counter, inc uint64, flags, flagsStart, flagsEnd uint32) {
+	if haveSVE2 {
+		hash4SVE2(out, p0, p1, p2, p3, blocks, key, counter, inc, flags, flagsStart, flagsEnd)
+	} else {
+		hash4NEON(out, p0, p1, p2, p3, blocks, key, counter, inc, flags, flagsStart, flagsEnd)
 	}
-	for i := group * 4; i < numChunks; i++ {
-		cvs[i] = ChainingValue(CompressChunk(buf[i*ChunkSize:(i+1)*ChunkSize], key, counter+i, flags))
-	}
-	numCVs := numChunks
-	if buflen%ChunkSize != 0 {
-		cvs[numCVs] = ChainingValue(CompressChunk(buf[numCVs*ChunkSize:buflen], key, counter+numCVs, flags))
-		numCVs++
-	}
-	return mergeSubtrees(&cvs, numCVs, key, flags)
+}
+
+// minLanes is the smallest number of inputs worth a four-lane call. A call
+// costs about as much as 1.4 scalar compressions per block on the cores this
+// was measured on (Neoverse N2, Apple M2), so it pays from two inputs up.
+const minLanes = 2
+
+// CompressNode compresses a node into a 16-word output.
+func CompressNode(n Node) [16]uint32 {
+	return compressNodeGeneric(n)
 }
 
 // CompressChunk compresses a single chunk, returning its final uncompressed
 // node.
 func CompressChunk(chunk []byte, key *[8]uint32, counter uint64, flags uint32) Node {
-	n := Node{
-		CV:       *key,
-		Counter:  counter,
-		BlockLen: BlockSize,
-		Flags:    flags | FlagChunkStart,
-	}
-	var block [BlockSize]byte
-	for len(chunk) > BlockSize {
-		copy(block[:], chunk)
-		chunk = chunk[BlockSize:]
-		n.Block = BytesToWords(block)
-		n.CV = ChainingValue(n)
-		n.Flags &^= FlagChunkStart
-	}
-	block = [BlockSize]byte{}
-	n.BlockLen = uint32(copy(block[:], chunk))
-	n.Block = BytesToWords(block)
-	n.Flags |= FlagChunkEnd
-	return n
+	return compressChunkGeneric(chunk, key, counter, flags)
 }
 
 // CompressBlocks compresses MaxSIMD copies of n with successive counters.
 func CompressBlocks(out *[MaxSIMD * BlockSize]byte, n Node) {
-	var outs [MaxSIMD][BlockSize]byte
-	compressBlocksGeneric(&outs, n)
-	for i := range outs {
-		copy(out[i*BlockSize:], outs[i][:])
+	if !haveNEON {
+		compressBlocksGeneric(out, n)
+		return
+	}
+	for i := 0; i < MaxSIMD; i += 4 {
+		lanes := (*[4 * BlockSize]byte)(out[i*BlockSize:])
+		if haveSVE2 {
+			xof4SVE2(lanes, &n)
+		} else {
+			xof4NEON(lanes, &n)
+		}
+		n.Counter += 4
 	}
 }
 
-func mergeSubtrees(cvs *[MaxSIMD][8]uint32, numCVs uint64, key *[8]uint32, flags uint32) Node {
-	return mergeSubtreesGeneric(cvs, numCVs, key, flags)
+// compressChunks stores the chaining values of len(cvs) full chunks in cvs.
+func compressChunks(cvs [][8]uint32, buf []byte, key *[8]uint32, counter uint64, flags uint32) {
+	if !haveNEON {
+		compressChunksGeneric(cvs, buf, key, counter, flags)
+		return
+	}
+	const blocks = ChunkSize / BlockSize
+	for len(cvs) >= 4 {
+		hash4((*[4][8]uint32)(cvs),
+			&buf[0], &buf[ChunkSize], &buf[2*ChunkSize], &buf[3*ChunkSize],
+			blocks, key, counter, 1, flags, FlagChunkStart, FlagChunkEnd)
+		cvs, buf, counter = cvs[4:], buf[4*ChunkSize:], counter+4
+	}
+	if n := len(cvs); n >= minLanes {
+		// Hash a partial group by pointing the spare lanes at the first
+		// chunk, so that nothing past the end of buf is read, and dropping
+		// their output.
+		var out [4][8]uint32
+		lanes := [4]*byte{&buf[0], &buf[0], &buf[0], &buf[0]}
+		for i := 1; i < n; i++ {
+			lanes[i] = &buf[i*ChunkSize]
+		}
+		hash4(&out, lanes[0], lanes[1], lanes[2], lanes[3],
+			blocks, key, counter, 1, flags, FlagChunkStart, FlagChunkEnd)
+		copy(cvs, out[:])
+		return
+	}
+	for i := range cvs {
+		cvs[i] = ChainingValue(CompressChunk(buf[i*ChunkSize:(i+1)*ChunkSize], key, counter+uint64(i), flags))
+	}
+}
+
+// compressParents stores the chaining value of the parent of cvs[2i] and
+// cvs[2i+1] in parents[i]. parents may alias the front of cvs.
+func compressParents(parents, cvs [][8]uint32, key *[8]uint32, flags uint32) {
+	if !haveNEON {
+		compressParentsGeneric(parents, cvs, key, flags)
+		return
+	}
+	// A parent's block is its two children's chaining values, which are
+	// adjacent in cvs. The kernel loads every lane's block before it stores
+	// anything, so writing parents over the front of cvs is safe.
+	pair := func(i int) *byte { return (*byte)(unsafe.Pointer(&cvs[2*i])) }
+	for len(parents) >= 4 {
+		hash4((*[4][8]uint32)(parents), pair(0), pair(1), pair(2), pair(3),
+			1, key, 0, 0, flags|FlagParent, 0, 0)
+		parents, cvs = parents[4:], cvs[8:]
+	}
+	if n := len(parents); n >= minLanes {
+		var out [4][8]uint32
+		lanes := [4]*byte{pair(0), pair(0), pair(0), pair(0)}
+		for i := 1; i < n; i++ {
+			lanes[i] = pair(i)
+		}
+		hash4(&out, lanes[0], lanes[1], lanes[2], lanes[3],
+			1, key, 0, 0, flags|FlagParent, 0, 0)
+		copy(parents, out[:])
+		return
+	}
+	for i := range parents {
+		parents[i] = ChainingValue(ParentNode(cvs[2*i], cvs[2*i+1], key, flags))
+	}
 }
 
 // BytesToWords converts 64 little-endian bytes to 16 words.
