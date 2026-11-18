@@ -5,8 +5,12 @@ retains the upstream AVX2, AVX-512, portable implementation, and public API,
 and adds an ARM64 four-chunk NEON backend, bounded tree-hash scheduling, and
 zero-allocation keyed one-shot helpers.
 
+This copy is published as `github.com/entireio/blake3`. It tracks
+[jmwoliver/blake3](https://github.com/jmwoliver/blake3) under its own module
+path, so that modules can depend on it without a `replace` directive.
+
 ```sh
-go get github.com/jmwoliver/blake3
+go get github.com/entireio/blake3
 ```
 
 `blake3` implements the [BLAKE3 cryptographic hash function](https://github.com/BLAKE3-team/BLAKE3).

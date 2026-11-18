@@ -1,4 +1,4 @@
-module github.com/jmwoliver/blake3
+module github.com/entireio/blake3
 
 go 1.22
 
