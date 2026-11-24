@@ -13,7 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # ubuntu-latest and windows-latest are amd64. ubuntu-24.04-arm and
+        # macos-latest are arm64, so the NEON kernels run on Linux and macOS.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
         go: ['1.22.x', stable]
     runs-on: ${{ matrix.os }}
     steps:
@@ -24,10 +26,15 @@ jobs:
           cache: true
       - run: go test ./...
       # Luke Champine's inherited Avo-generated AMD64 assembly uses valid
-      # sub-word operands that asmdecl cannot model. The native SIMD job below
+      # sub-word operands that asmdecl cannot model. The amd64-simd job
       # differentially tests those entry points against the generic routines.
       - name: Vet (except generated-assembly declarations)
+        if: runner.arch != 'ARM64'
         run: go vet -asmdecl=false ./...
+      # The NEON assembly passes asmdecl, so arm64 runs the full vet.
+      - name: Vet
+        if: runner.arch == 'ARM64'
+        run: go vet ./...
 
   amd64-simd:
     runs-on: ubuntu-24.04
@@ -45,10 +52,45 @@ jobs:
           set -euo pipefail
           output="${RUNNER_TEMP}/amd64-simd-tests.txt"
           go test -count=1 -v ./guts -run 'AVX' | tee "${output}"
-          if grep -E -- '--- SKIP: Test.*AVX2' "${output}"; then
-            printf 'GitHub runner did not expose AVX2\n' >&2
-            exit 1
-          fi
+          .github/scripts/require-tests-passed.sh "${output}" \
+            TestCompressBufferAVX2MatchesGeneric \
+            TestCompressBlocksAVX2MatchesGeneric \
+            TestCompressParentsAVX2MatchesGeneric
+      # A hosted runner CPU can lack AVX-512, and a runner with AVX-512 never
+      # takes the AVX2 dispatch path. Intel SDE emulates one CPU of each kind,
+      # so both kernels run on every CI run. setup-sde checks the SHA-256 of
+      # the SDE download.
+      - name: Set up Intel SDE
+        uses: petarpetrovt/setup-sde@6d2773bc0ef3005fd52e0ae0bb91782321793aec # v6.0
+        with:
+          sdeVersion: 10.13.1
+      - name: Build test binaries
+        run: |
+          go test -c -o "${RUNNER_TEMP}/guts.test" ./guts
+          go test -c -o "${RUNNER_TEMP}/blake3.test" .
+      - name: AVX-512 kernels under SDE (Sapphire Rapids)
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="${RUNNER_TEMP}/sde-avx512-tests.txt"
+          "${SDE_PATH}/sde64" -spr -- "${RUNNER_TEMP}/guts.test" \
+            -test.count=1 -test.v -test.run 'AVX' | tee "${output}"
+          .github/scripts/require-tests-passed.sh "${output}" \
+            TestCompressBufferAVX2MatchesGeneric \
+            TestCompressBufferAVX512MatchesGeneric \
+            TestCompressBlocksAVX2MatchesGeneric \
+            TestCompressBlocksAVX512MatchesGeneric \
+            TestCompressParentsAVX2MatchesGeneric
+      # The package tests check the official test vectors through the
+      # dispatcher, so each emulated CPU covers its kernel end to end.
+      - name: Test vectors through the AVX-512 path under SDE (Sapphire Rapids)
+        run: |
+          "${SDE_PATH}/sde64" -spr -- "${RUNNER_TEMP}/blake3.test" \
+            -test.count=1 -test.timeout=20m
+      - name: Test vectors through the AVX2 path under SDE (Haswell, no AVX-512)
+        run: |
+          "${SDE_PATH}/sde64" -hsw -- "${RUNNER_TEMP}/blake3.test" \
+            -test.count=1 -test.timeout=20m
       - name: Capture interleaved fork and upstream benchmarks
         shell: bash
         run: |
@@ -77,5 +119,48 @@ jobs:
           name: amd64-simd-evidence
           path: |
             ${{ runner.temp }}/amd64-simd-tests.txt
+            ${{ runner.temp }}/sde-avx512-tests.txt
             ${{ runner.temp }}/fork-amd64.txt
             ${{ runner.temp }}/upstream-amd64.txt
+
+  arm64-simd:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux arm64 is the server target (Graviton). macOS arm64 is the
+        # developer target.
+        os: [ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache: true
+      - name: Record CPU
+        shell: bash
+        run: |
+          uname -m
+          if [[ -r /proc/cpuinfo ]]; then
+            grep -m2 -E 'CPU part|Features' /proc/cpuinfo || true
+          else
+            sysctl -n machdep.cpu.brand_string
+          fi
+      - name: Require NEON differential coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="${RUNNER_TEMP}/arm64-simd-tests.txt"
+          go test -count=1 -v ./guts -run 'NEON' | tee "${output}"
+          .github/scripts/require-tests-passed.sh "${output}" \
+            TestCompressNodeNEONMatchesGeneric \
+            TestCompressChunksNEONMatchesGeneric \
+            TestCompressBufferNEONMatchesGeneric
+      # The package tests check the official test vectors through the
+      # dispatcher, which always takes the NEON path on arm64.
+      - name: Test vectors through the NEON path
+        run: go test -count=1 .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-simd-evidence-${{ matrix.os }}
+          path: ${{ runner.temp }}/arm64-simd-tests.txt
